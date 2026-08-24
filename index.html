@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Ivneet · Strength</title>
+<meta name="theme-color" content="#161510" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #161510;
+    --bg-soft: #1c1a14;
+    --surface: #211f18;
+    --surface-raised: #292619;
+    --border: #3a3626;
+    --border-soft: #2c2a1e;
+    --chalk: #efe9d8;
+    --chalk-dim: #9c977f;
+    --chalk-faint: #66614e;
+    --accent: #e2571f;
+    --accent-dim: #7a3820;
+    --gold: #c9a03e;
+    --green: #7e9c5a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); }
+  body {
+    color: var(--chalk);
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    background-image: radial-gradient(ellipse at top, rgba(226,87,31,0.07), transparent 55%);
+    min-height: 100vh;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .disp {
+    font-family: "Arial Black", -apple-system, "Segoe UI", sans-serif;
+    font-weight: 900;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace; }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 18px 16px 48px; }
+
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .title { font-size: 20px; color: var(--chalk); line-height: 1; }
+  .title .dot { color: var(--accent); }
+  .subtitle { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--chalk-faint); margin-top: 4px; letter-spacing: 0.03em; }
+  .unit-btn {
+    font-family: ui-monospace, monospace; background: var(--surface); border: 1px solid var(--border);
+    color: var(--chalk-dim); font-size: 12px; border-radius: 6px; padding: 6px 10px; cursor: pointer;
+  }
+
+  .banner {
+    font-family: ui-monospace, monospace; font-size: 12px; padding: 9px 12px; border-radius: 7px;
+    margin-bottom: 12px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--chalk-faint);
+  }
+  .banner.ok { background: rgba(126,156,90,0.12); border-color: #4a5c38; color: var(--green); }
+  .banner.fail { background: rgba(226,87,31,0.14); border-color: var(--accent); color: var(--accent); }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; background: var(--surface); border-radius: 8px; padding: 3px; border: 1px solid var(--border); }
+  .tab-btn {
+    flex: 1; font-family: "Arial Black", sans-serif; font-weight: 900; text-transform: uppercase; letter-spacing: -0.01em;
+    font-size: 12.5px; padding: 8px 0; border-radius: 6px; border: none; cursor: pointer; background: transparent; color: var(--chalk-dim);
+  }
+  .tab-btn.active { background: var(--accent); color: var(--bg); }
+
+  .field-row { display: flex; gap: 8px; margin-bottom: 14px; }
+  .field { flex: 1; }
+  .field label { display: block; font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--chalk-faint); letter-spacing: 0.05em; margin-bottom: 6px; }
+  .field select, .field input[type="date"] {
+    width: 100%; font-family: ui-monospace, monospace; background: var(--bg-soft); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--chalk); font-size: 14px; padding: 9px 10px; outline: none;
+  }
+
+  .status-line { min-height: 20px; margin-bottom: 10px; font-family: ui-monospace, monospace; font-size: 11.5px; }
+  .status-line.saving { color: var(--chalk-faint); }
+  .status-line.saved { color: var(--green); }
+  .status-line.error button {
+    font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--bg); background: var(--accent);
+    border: none; border-radius: 5px; padding: 4px 10px; cursor: pointer;
+  }
+
+  .day-title { font-size: 19px; line-height: 1.1; }
+  .day-focus { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--accent); margin-top: 3px; }
+  .progress-row { display: flex; align-items: center; gap: 8px; margin: 12px 0 6px; }
+  .progress-track { flex: 1; height: 6px; background: var(--border-soft); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); transition: width .25s ease; }
+  .progress-count { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--chalk-faint); white-space: nowrap; }
+
+  .cue-box {
+    font-family: ui-monospace, monospace; font-size: 12px; color: var(--chalk-faint); line-height: 1.6;
+    background: var(--bg-soft); border: 1px solid var(--border-soft); border-radius: 6px; padding: 10px 12px; margin: 10px 0 16px;
+  }
+
+  .exercise-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 14px 6px; margin-bottom: 12px; }
+  .exercise-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .exercise-name { font-size: 15.5px; color: var(--chalk); line-height: 1.15; }
+  .exercise-target { font-family: ui-monospace, monospace; font-size: 12px; color: var(--gold); margin-top: 4px; letter-spacing: 0.02em; }
+  .video-link {
+    color: var(--chalk-dim); display: flex; align-items: center; gap: 4px; font-size: 11px; font-family: ui-monospace, monospace;
+    text-decoration: none; border: 1px solid var(--border); border-radius: 5px; padding: 4px 7px; white-space: nowrap;
+  }
+
+  .set-row { display: grid; grid-template-columns: 26px 1fr 1fr 34px; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border-soft); }
+  .set-idx { font-family: ui-monospace, monospace; color: var(--chalk-faint); font-size: 13px; }
+  .set-row input[type="number"] {
+    width: 100%; font-family: ui-monospace, monospace; background: var(--bg-soft); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--chalk); font-size: 14px; padding: 6px 8px; outline: none;
+  }
+  .bw-label { font-family: ui-monospace, monospace; color: var(--chalk-faint); font-size: 12.5px; }
+  .chalk-check { background: none; border: none; padding: 0; cursor: pointer; justify-self: center; }
+
+  .set-progress { display: flex; gap: 3px; margin: 10px 0 12px; }
+  .set-progress > div { flex: 1; height: 3px; border-radius: 2px; background: var(--border-soft); }
+  .set-progress > div.done { background: var(--accent); }
+
+  .rest-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 34px 18px; text-align: center; }
+
+  .section { border-bottom: 1px solid var(--border-soft); }
+  .section-btn {
+    width: 100%; background: none; border: none; padding: 14px 2px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;
+  }
+  .section-btn .left { display: flex; align-items: center; gap: 9px; }
+  .section-title { font-size: 14.5px; color: var(--chalk); }
+  .section-body { padding-bottom: 16px; color: var(--chalk-dim); font-size: 13.5px; line-height: 1.6; }
+  .section-body p { margin: 6px 0; }
+  .section-body b { color: var(--chalk); }
+  .chev { transition: transform .15s; color: var(--chalk-faint); }
+  .chev.open { transform: rotate(180deg); }
+
+  .pill-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
+  .pill {
+    font-family: ui-monospace, monospace; font-size: 11.5px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--chalk-dim); cursor: pointer;
+  }
+  .pill.active { border-color: var(--accent); background: var(--accent-dim); color: var(--chalk); }
+
+  .session-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+  .session-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .session-date { font-size: 14.5px; color: var(--chalk); }
+  .session-count { font-family: ui-monospace, monospace; font-size: 11px; color: var(--chalk-faint); }
+  .session-ex-row { display: flex; justify-content: space-between; font-size: 12.5px; padding: 3px 0; color: var(--chalk-dim); }
+  .session-ex-row span:last-child { font-family: ui-monospace, monospace; color: var(--gold); }
+
+  .empty-note { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 28px 18px; text-align: center; color: var(--chalk-dim); font-family: ui-monospace, monospace; font-size: 12.5px; }
+  .loading-note { color: var(--chalk-faint); font-family: ui-monospace, monospace; font-size: 12px; padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div>
+      <div class="disp title">Ivneet<span class="dot">.</span> Strength</div>
+      <div class="subtitle" id="todayLabel"></div>
+    </div>
+    <button class="unit-btn" id="unitBtn">LB</button>
+  </div>
+
+  <div class="banner" id="banner">Connecting…</div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="train">Train</button>
+    <button class="tab-btn" data-tab="progress">Progress</button>
+    <button class="tab-btn" data-tab="guide">Guide</button>
+  </div>
+
+  <div id="trainTab"></div>
+  <div id="progressTab" style="display:none"></div>
+  <div id="guideTab" style="display:none"></div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG — paste your own Supabase project values here.
+   Get these from: Supabase dashboard → Project Settings → API
+   ============================================================ */
+const SUPABASE_URL = "https://tqpwhnauxamcpdimzzil.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRxcHdobmF1eGFtY3BkaW16emlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1MjU2MDQsImV4cCI6MjEwMzEwMTYwNH0.ItwK3puKpT-uDvirKRQ4V3A4SFI0VMcboxsPVsHd8uw";
+
+const sb = (SUPABASE_URL.startsWith("http"))
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+/* ============================================================
+   PROGRAM DATA
+   ============================================================ */
+const yt = (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q + " proper form tutorial")}`;
+
+const WORKOUTS = [
+  {
+    id: "day1", label: "Day 1 · Lower (Quads+Glutes)",
+    title: "Day 1 — Lower Body", focus: "Quads + Glutes",
+    cue: "Control the descent and maintain stable foot pressure. Use the deepest comfortable range you can control. Keep hips and back supported on leg press. Control both directions on leg extension. Take controlled steps on lunges. Full comfortable range on calf raises — pause at the top, lower slowly.",
+    exercises: [
+      { name: "Hack Squat", sets: 4, reps: "6–10", rir: "2", weight: true, video: yt("hack squat") },
+      { name: "Bulgarian Split Squat", sets: 3, reps: "8–10 each leg", rir: "2", weight: true, video: yt("bulgarian split squat") },
+      { name: "Leg Press", sets: 3, reps: "10–12", rir: "1–2", weight: true, video: yt("leg press") },
+      { name: "Leg Extension", sets: 3, reps: "10–15", rir: "1–2", weight: true, video: yt("leg extension") },
+      { name: "Walking Dumbbell Lunges", sets: 2, reps: "10 each leg", rir: "2", weight: true, video: yt("dumbbell walking lunge") },
+      { name: "Standing Calf Raise", sets: 3, reps: "12–15", rir: "—", weight: true, video: yt("standing calf raise") },
+    ],
+  },
+  {
+    id: "day2", label: "Day 2 · Upper (Pull-Up+Back)",
+    title: "Day 2 — Upper Body", focus: "Pull-Up Strength + Back",
+    cue: "Do the pull-up work first while fresh. Keep shoulders active. Elbows straight on scapular pull-ups. Use only enough assistance for clean reps. Drive elbows down on lat pulldown. Keep chest supported on rows. Tall posture, strong grip, braced trunk on carries.",
+    exercises: [
+      { name: "Active Hang", sets: 3, reps: "20–30 sec", rir: "—", weight: false, unit: "sec", video: yt("active hang pull up") },
+      { name: "Scapular Pull-Ups", sets: 3, reps: "6–10", rir: "—", weight: false, video: yt("scapular pull up") },
+      { name: "Assisted Pull-Ups", sets: 4, reps: "4–6", rir: "1–2", weight: true, weightLabel: "Assist", video: yt("assisted pull up") },
+      { name: "Lat Pulldown", sets: 3, reps: "8–10", rir: "1–2", weight: true, video: yt("lat pulldown") },
+      { name: "Chest-Supported Row", sets: 3, reps: "8–12", rir: "1–2", weight: true, video: yt("chest supported dumbbell row") },
+      { name: "Straight-Arm Cable Pulldown", sets: 2, reps: "12–15", rir: "—", weight: true, video: yt("straight arm pulldown") },
+      { name: "Hammer Curl", sets: 3, reps: "10–12", rir: "—", weight: true, video: yt("hammer curl") },
+      { name: "Farmer's Carry", sets: 3, reps: "30–40 sec", rir: "—", weight: true, unit: "sec", video: yt("farmers carry") },
+    ],
+  },
+  {
+    id: "day3", label: "Day 3 · Lower (Glutes+Hamstrings)",
+    title: "Day 3 — Lower Body", focus: "Glutes + Hamstrings",
+    cue: "Reach full hip extension without hyperextending the lower back. Push hips backward on RDLs and keep the weight close to your legs. Control the step backward on reverse lunges. Avoid excess lower-back movement on kickbacks. Control the return on abduction.",
+    exercises: [
+      { name: "Barbell Hip Thrust", sets: 4, reps: "6–10", rir: "2", weight: true, video: yt("barbell hip thrust") },
+      { name: "Romanian Deadlift", sets: 3, reps: "8–10", rir: "2", weight: true, video: yt("romanian deadlift") },
+      { name: "Reverse Lunge", sets: 3, reps: "8–10 each leg", rir: "—", weight: true, video: yt("dumbbell reverse lunge") },
+      { name: "Seated Leg Curl", sets: 3, reps: "10–12", rir: "1–2", weight: true, video: yt("seated leg curl") },
+      { name: "Cable Glute Kickback", sets: 3, reps: "12–15 each leg", rir: "—", weight: true, video: yt("cable glute kickback") },
+      { name: "Hip Abduction", sets: 3, reps: "15–20", rir: "—", weight: true, video: yt("hip abduction machine") },
+    ],
+  },
+  {
+    id: "day4", label: "Day 4 · Upper (Push-Up+Upper)",
+    title: "Day 4 — Upper Body", focus: "Push-Up Strength + Upper Body",
+    cue: "Skill work comes first. Choose an elevation that allows clean reps. Lower eccentrics for about 3–5 seconds. Use a neutral grip if it's more comfortable for the shoulder. Keep the load controlled through a comfortable shoulder range.",
+    exercises: [
+      { name: "Incline Push-Up", sets: 3, reps: "8–12", rir: "—", weight: false, video: yt("incline push up") },
+      { name: "Slow Eccentric Push-Up", sets: 3, reps: "4–6", rir: "—", weight: false, video: yt("negative push up eccentric") },
+      { name: "Dumbbell Chest Press", sets: 3, reps: "8–10", rir: "2", weight: true, video: yt("dumbbell chest press") },
+      { name: "Single-Arm Cable Row", sets: 3, reps: "10–12 each side", rir: "—", weight: true, video: yt("single arm cable row") },
+      { name: "Cable Lateral Raise", sets: 3, reps: "12–15", rir: "—", weight: true, video: yt("single arm cable lateral raise") },
+      { name: "Rear Delt Fly", sets: 3, reps: "12–15", rir: "—", weight: true, video: yt("rear delt fly") },
+      { name: "Rope Triceps Pressdown", sets: 3, reps: "10–12", rir: "—", weight: true, video: yt("rope tricep pushdown") },
+      { name: "Dumbbell Biceps Curl", sets: 2, reps: "10–12", rir: "—", weight: true, video: yt("dumbbell bicep curl") },
+    ],
+  },
+  {
+    id: "day5", label: "Day 5 · Lower (Unilateral+Glutes)",
+    title: "Day 5 — Lower Body", focus: "Glutes + Unilateral Strength",
+    cue: "One of the best technical days. Control both the step up and the descent. Prioritize balance and hip control over heavy weight. Resist rotation and keep the trunk stable on Pallof press.",
+    exercises: [
+      { name: "Goblet Squat", sets: 3, reps: "8–10", rir: "2", weight: true, video: yt("goblet squat") },
+      { name: "Dumbbell Step-Up", sets: 3, reps: "8–10 each leg", rir: "—", weight: true, video: yt("dumbbell step up") },
+      { name: "Single-Leg Romanian Deadlift", sets: 3, reps: "8–10 each leg", rir: "—", weight: true, video: yt("single leg romanian deadlift") },
+      { name: "Glute Bridge / Hip Thrust", sets: 3, reps: "10–12", rir: "—", weight: true, video: yt("weighted glute bridge") },
+      { name: "Leg Extension", sets: 2, reps: "12–15", rir: "—", weight: true, video: yt("leg extension") },
+      { name: "Hip Abduction", sets: 3, reps: "15–20", rir: "—", weight: true, video: yt("hip abduction machine") },
+      { name: "Pallof Press", sets: 3, reps: "10 each side", rir: "—", weight: true, video: yt("pallof press") },
+    ],
+  },
+  {
+    id: "day6", label: "Day 6 · Performance",
+    title: "Day 6 — Performance + Core", focus: "Pull-Up + Push-Up Practice + Conditioning",
+    cue: "Keep this day lighter — slightly more assistance than Day 2. Choose the variation that allows clean technique. Finish with 15–20 min easy-to-moderate cardio — it should not feel like another hard workout.",
+    exercises: [
+      { name: "Assisted Pull-Up — Technique", sets: 3, reps: "5–6", rir: "—", weight: true, weightLabel: "Assist", video: yt("assisted pull up") },
+      { name: "Push-Up Practice", sets: 3, reps: "6–10", rir: "—", weight: false, video: yt("push up tutorial") },
+      { name: "Face Pull", sets: 3, reps: "12–15", rir: "—", weight: true, video: yt("cable face pull") },
+      { name: "Dead Bug", sets: 3, reps: "8–10 each side", rir: "—", weight: false, video: yt("dead bug") },
+      { name: "Hanging Knee Raise", sets: 3, reps: "8–12", rir: "—", weight: false, video: yt("hanging knee raise") },
+      { name: "Side Plank", sets: 3, reps: "20–30 sec each side", rir: "—", weight: false, unit: "sec", video: yt("side plank") },
+    ],
+  },
+];
+const workoutById = (id) => WORKOUTS.find(w => w.id === id);
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let unit = localStorage.getItem("ivneet_unit_pref") || "lb"; // unit label only, not data — safe to keep local
+let currentDate = new Date().toISOString().slice(0,10);
+let currentWorkoutId = "day1";
+let currentLog = {}; // { "exIdx-setIdx": {weight, reps, done, rowId} }
+let saveTimer = null;
+let progressWorkoutId = "day1";
+
+/* ============================================================
+   CHALK CHECK SVG
+   ============================================================ */
+function chalkCheckSVG(done) {
+  return `<svg width="22" height="22" viewBox="0 0 24 24">
+    <rect x="1.5" y="1.5" width="21" height="21" rx="3" fill="${done ? 'var(--accent)' : 'transparent'}" stroke="${done ? 'var(--accent)' : 'var(--chalk-faint)'}" stroke-width="1.6"/>
+    ${done ? `<path d="M5.5 12.2 L10 16.5 L18.5 6.8" fill="none" stroke="var(--bg)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>` : ""}
+  </svg>`;
+}
+
+/* ============================================================
+   CONNECTIVITY CHECK
+   ============================================================ */
+async function checkConnection() {
+  const banner = document.getElementById("banner");
+  if (!sb) {
+    banner.className = "banner fail";
+    banner.textContent = "⚠ Not configured — paste your Supabase URL & key into index.html (see SETUP.md).";
+    return false;
+  }
+  try {
+    const { error } = await sb.from("logs").select("id").limit(1);
+    if (error) throw error;
+    banner.className = "banner ok";
+    banner.textContent = "✓ Connected — entries save automatically";
+    return true;
+  } catch (e) {
+    banner.className = "banner fail";
+    banner.textContent = "⚠ Storage error: " + (e.message || "could not reach database");
+    return false;
+  }
+}
+
+/* ============================================================
+   TRAIN TAB
+   ============================================================ */
+async function loadSession(dateStr, workoutId) {
+  currentLog = {};
+  if (!sb) return;
+  const { data, error } = await sb.from("logs")
+    .select("*")
+    .eq("date", dateStr)
+    .eq("workout", workoutId);
+  if (error) { console.error(error); return; }
+  const w = workoutById(workoutId);
+  (data || []).forEach(row => {
+    const exIdx = w.exercises.findIndex(e => e.name === row.exercise);
+    if (exIdx === -1) return;
+    currentLog[`${exIdx}-${row.set_number - 1}`] = {
+      weight: row.weight ?? "", reps: row.actual_reps ?? "", done: !!row.done, rowId: row.id
+    };
+  });
+}
+
+function setStatus(state, msg) {
+  const el = document.getElementById("statusLine");
+  if (!el) return;
+  el.className = "status-line " + state;
+  if (state === "saving") el.textContent = "Saving…";
+  else if (state === "saved") el.textContent = "✓ Saved";
+  else if (state === "error") el.innerHTML = `⚠ ${msg || "Save failed"} <button onclick="retrySave()">Retry</button>`;
+  else el.textContent = "";
+}
+
+let lastSaveArgs = null;
+function retrySave() { if (lastSaveArgs) writeSet(...lastSaveArgs); }
+
+async function writeSet(exIdx, setIdx, ex) {
+  lastSaveArgs = [exIdx, setIdx, ex];
+  if (!sb) { setStatus("error", "not configured"); return; }
+  const key = `${exIdx}-${setIdx}`;
+  const v = currentLog[key] || {};
+  setStatus("saving");
+  const row = {
+    date: currentDate,
+    workout: currentWorkoutId,
+    exercise: ex.name,
+    set_number: setIdx + 1,
+    target_reps: ex.reps,
+    rir: ex.rir,
+    weight: v.weight === "" || v.weight == null ? null : Number(v.weight),
+    actual_reps: v.reps === "" || v.reps == null ? null : Number(v.reps),
+    done: !!v.done,
+  };
+  const { data, error } = await sb.from("logs")
+    .upsert(row, { onConflict: "date,workout,exercise,set_number" })
+    .select()
+    .single();
+  if (error) { setStatus("error", error.message); return; }
+  currentLog[key] = { ...v, rowId: data.id };
+  setStatus("saved");
+  renderTrain(); // refresh progress bar
+}
+
+function queueSave(exIdx, setIdx, ex) {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => writeSet(exIdx, setIdx, ex), 350);
+}
+
+function renderTrain() {
+  const w = workoutById(currentWorkoutId);
+  const el = document.getElementById("trainTab");
+
+  const workoutOptions = WORKOUTS.map(x => `<option value="${x.id}" ${x.id===currentWorkoutId?"selected":""}>${x.label}</option>`).join("");
+
+  let totalSets = 0, doneSets = 0;
+  w.exercises.forEach((ex, ei) => {
+    for (let s = 0; s < ex.sets; s++) {
+      totalSets++;
+      if (currentLog[`${ei}-${s}`]?.done) doneSets++;
+    }
+  });
+
+  let html = `
+    <div class="field-row">
+      <div class="field">
+        <label>DATE</label>
+        <input type="date" id="dateInput" value="${currentDate}" />
+      </div>
+      <div class="field">
+        <label>WORKOUT</label>
+        <select id="workoutSelect">${workoutOptions}</select>
+      </div>
+    </div>
+    <div id="statusLine" class="status-line"></div>
+    <div class="day-title disp">${w.title}</div>
+    <div class="day-focus mono">${w.focus}</div>
+    <div class="progress-row">
+      <div class="progress-track"><div class="progress-fill" style="width:${totalSets ? (doneSets/totalSets*100) : 0}%"></div></div>
+      <div class="progress-count mono">${doneSets}/${totalSets} sets</div>
+    </div>
+    <div class="cue-box">${w.cue}</div>
+  `;
+
+  w.exercises.forEach((ex, ei) => {
+    const unitLabel = ex.unit === "sec" ? "sec" : "reps";
+    let done = 0;
+    for (let s = 0; s < ex.sets; s++) if (currentLog[`${ei}-${s}`]?.done) done++;
+    html += `<div class="exercise-card">
+      <div class="exercise-head">
+        <div>
+          <div class="exercise-name disp">${ex.name}</div>
+          <div class="exercise-target mono">${ex.sets} × ${ex.reps}${ex.rir !== "—" ? `  ·  RIR ${ex.rir}` : ""}${ex.weightLabel ? `  ·  ${ex.weightLabel} wt` : ""}</div>
+        </div>
+        <a class="video-link mono" href="${ex.video}" target="_blank" rel="noopener noreferrer">▶ form</a>
+      </div>
+      <div>`;
+    for (let s = 0; s < ex.sets; s++) {
+      const v = currentLog[`${ei}-${s}`] || { weight: "", reps: "", done: false };
+      html += `<div class="set-row">
+        <div class="set-idx">${s+1}</div>
+        ${ex.weight
+          ? `<input type="number" inputmode="decimal" placeholder="${ex.weightLabel === 'Assist' ? 'assist lb' : 'lb'}" value="${v.weight ?? ''}" data-ex="${ei}" data-set="${s}" data-field="weight" />`
+          : `<div class="bw-label mono">bodyweight</div>`}
+        <input type="number" inputmode="numeric" placeholder="${unitLabel}" value="${v.reps ?? ''}" data-ex="${ei}" data-set="${s}" data-field="reps" />
+        <button class="chalk-check" data-ex="${ei}" data-set="${s}" data-field="done">${chalkCheckSVG(v.done)}</button>
+      </div>`;
+    }
+    html += `</div>
+      <div class="set-progress">`;
+    for (let s = 0; s < ex.sets; s++) html += `<div class="${currentLog[`${ei}-${s}`]?.done ? 'done' : ''}"></div>`;
+    html += `</div></div>`;
+  });
+
+  el.innerHTML = html;
+
+  document.getElementById("dateInput").onchange = async (e) => {
+    currentDate = e.target.value;
+    await loadSession(currentDate, currentWorkoutId);
+    renderTrain();
+  };
+  document.getElementById("workoutSelect").onchange = async (e) => {
+    currentWorkoutId = e.target.value;
+    await loadSession(currentDate, currentWorkoutId);
+    renderTrain();
+  };
+  el.querySelectorAll("input[data-field]").forEach(inp => {
+    inp.addEventListener("input", (e) => {
+      const ei = +e.target.dataset.ex, s = +e.target.dataset.set, field = e.target.dataset.field;
+      const key = `${ei}-${s}`;
+      currentLog[key] = { ...(currentLog[key] || {}), [field]: e.target.value };
+      queueSave(ei, s, w.exercises[ei]);
+    });
+  });
+  el.querySelectorAll("button[data-field='done']").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const t = e.currentTarget;
+      const ei = +t.dataset.ex, s = +t.dataset.set;
+      const key = `${ei}-${s}`;
+      const cur = currentLog[key] || {};
+      currentLog[key] = { ...cur, done: !cur.done };
+      writeSet(ei, s, w.exercises[ei]);
+    });
+  });
+}
+
+/* ============================================================
+   PROGRESS TAB
+   ============================================================ */
+function bestSetLabel(entries) {
+  if (!entries.length) return null;
+  let best = entries.find(e => e.weight != null);
+  entries.forEach(e => { if (e.weight != null && best && Number(e.weight) > Number(best.weight)) best = e; });
+  if (!best) best = entries[0];
+  const w = best.weight != null ? `${best.weight}${unit}` : "BW";
+  const r = best.actual_reps != null ? ` × ${best.actual_reps}` : "";
+  return `${w}${r}`;
+}
+
+async function renderProgress() {
+  const el = document.getElementById("progressTab");
+  const pills = WORKOUTS.map(w => `<button class="pill ${w.id===progressWorkoutId?'active':''}" data-id="${w.id}">${w.label.split("·")[0].trim()}</button>`).join("");
+  el.innerHTML = `<div class="pill-row">${pills}</div><div id="progressList" class="loading-note">Loading…</div>`;
+
+  el.querySelectorAll(".pill").forEach(p => {
+    p.onclick = () => { progressWorkoutId = p.dataset.id; renderProgress(); };
+  });
+
+  if (!sb) {
+    document.getElementById("progressList").innerHTML = `<div class="empty-note">Not connected — configure Supabase in index.html.</div>`;
+    return;
+  }
+  const w = workoutById(progressWorkoutId);
+  const { data, error } = await sb.from("logs")
+    .select("*")
+    .eq("workout", progressWorkoutId)
+    .order("date", { ascending: false });
+
+  const listEl = document.getElementById("progressList");
+  if (error) { listEl.innerHTML = `<div class="empty-note">⚠ ${error.message}</div>`; return; }
+  if (!data || !data.length) { listEl.innerHTML = `<div class="empty-note">No logged sessions yet for ${w.title} — ${w.focus}.</div>`; return; }
+
+  const byDate = {};
+  data.forEach(row => { (byDate[row.date] = byDate[row.date] || []).push(row); });
+  const dates = Object.keys(byDate).sort().reverse();
+
+  let html = "";
+  dates.forEach(dateStr => {
+    const rows = byDate[dateStr];
+    const doneCount = rows.filter(r => r.done).length;
+    let totalSets = 0;
+    w.exercises.forEach(ex => totalSets += ex.sets);
+    const dObj = new Date(dateStr + "T00:00:00");
+    html += `<div class="session-card">
+      <div class="session-head">
+        <div class="session-date disp">${dObj.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</div>
+        <div class="session-count mono">${doneCount}/${totalSets} sets</div>
+      </div>`;
+    w.exercises.forEach(ex => {
+      const entries = rows.filter(r => r.exercise === ex.name && (r.weight != null || r.actual_reps != null));
+      const label = bestSetLabel(entries);
+      if (!label) return;
+      html += `<div class="session-ex-row"><span>${ex.name}</span><span>${label}</span></div>`;
+    });
+    html += `</div>`;
+  });
+  listEl.outerHTML = `<div id="progressList">${html}</div>`;
+}
+
+/* ============================================================
+   GUIDE TAB
+   ============================================================ */
+const GUIDE_SECTIONS = [
+  { title: "Program Goals", open: true, html: `
+    <ul style="margin:0;padding-left:18px">
+      <li>Build lean muscle, with emphasis on lower-body development</li>
+      <li>Achieve an unassisted pull-up</li>
+      <li>Improve push-up strength, technique, and reps</li>
+      <li>Increase upper-body pulling and pushing strength</li>
+      <li>Improve core stability and grip strength</li>
+      <li>Maintain mobility and movement quality</li>
+    </ul>` },
+  { title: "Training Guidelines", html: `
+    <p><b>Intensity:</b> most working sets finish around RIR 1–3. Stop pull-up/push-up skill work before form breaks down.</p>
+    <p><b>Rest:</b> 2–3 min compound lifts, 60–90 sec accessories, 90–180 sec pull-up skill work.</p>
+    <p><b>Tempo:</b> control the eccentric for about 2–3 seconds unless noted.</p>
+    <p><b>Overload:</b> improve quality and reps first — only add load once the top of the rep range is clean at the prescribed RIR.</p>
+    <p style="color:var(--accent)">Sharp or increasing pain — especially right shoulder, wrist, or lower back — is never something to push through.</p>` },
+  { title: "Pull-Up Progression", html: `
+    <p><b>Weeks 1–2:</b> active hangs + scapular pull-ups + assisted pull-ups.</p>
+    <p><b>Weeks 3–4:</b> gradually decrease assistance while reps stay clean. Add 3×3 slow negatives once a week if the shoulder tolerates it (~3–5 sec down).</p>
+    <p><b>Weeks 5–6:</b> keep assisted reps + slower negatives, begin occasional unassisted attempts while fresh — not after exhausting the back.</p>
+    <p style="color:var(--chalk-faint)">Milestones: 30-sec hang → 8–10 scapular pull-ups → 6–8 clean assisted reps → 5–10 sec controlled negative → less assistance → 1 unassisted rep.</p>` },
+  { title: "Push-Up Progression", html: `
+    <p>Start at an elevation allowing ~8–12 clean reps. Once 3×12 is clean, lower the surface and rebuild: 3×8 → 3×10 → 3×12 → lower again — toward floor push-ups.</p>
+    <p><b>Technique:</b> body moves as one unit, core braced, elbows controlled, chest toward the surface, no collapsing through the hips.</p>
+    <p style="color:var(--chalk-faint)">If wrist extension is uncomfortable, use push-up handles, dumbbells, or an elevated bar for a more neutral wrist.</p>` },
+  { title: "Nutrition Foundation", html: `
+    <p>The goal isn't just to get lighter — with this training volume, food supports lean muscle, performance, and recovery. Protein consistency comes first.</p>
+    <p><b>Protein goal:</b> 80–100 g/day across ~3–4 meals — no need to hit it perfectly every day.</p>
+    <p class="mono" style="font-size:12.5px">Breakfast 20–25g · Lunch 25–30g · Snack 15–20g · Dinner 25–30g</p>
+    <p><b>Breakfast:</b> Greek yogurt + fruit + eggs · eggs + toast + fruit · yogurt + protein powder + berries</p>
+    <p><b>Lunch:</b> don't skip it — chicken/turkey + rice + veg · wrap + fruit · tuna + potatoes/rice + salad · yogurt + fruit + shake when short on time</p>
+    <p><b>Dinner:</b> grilled chicken/fish + rice or potatoes + vegetables</p>` },
+  { title: "Hydration", html: `
+    <p>Stay consistent through the day rather than catching up around training — water after waking, through the workday, around training, and with meals. Add more on hot days or high-sweat sessions.</p>` },
+  { title: "Recovery", html: `
+    <p>Six days a week makes recovery part of the program, not optional. If performance drops, soreness lingers, sleep suffers, or the shoulder/wrist/lower back gets more irritated, dial back volume. Not every workout needs to be maximal — hard days + moderate days + recovery = progress.</p>` },
+  { title: "6–8 Week Targets", html: `
+    <ul style="margin:0;padding-left:18px">
+      <li><b>Pull-up:</b> less assistance, better scapular control and eccentric strength, progress toward the first unassisted rep</li>
+      <li><b>Push-up:</b> more clean reps, progress toward a lower elevation/floor variation</li>
+      <li><b>Lower body:</b> more strength and development via progressive resistance</li>
+      <li><b>Body composition:</b> support lean muscle while improving composition</li>
+      <li><b>Nutrition:</b> more protein consistency, fewer skipped meals</li>
+      <li><b>Habits:</b> a challenging but sustainable six-day structure</li>
+    </ul>` },
+];
+
+function renderGuide() {
+  const el = document.getElementById("guideTab");
+  el.innerHTML = GUIDE_SECTIONS.map((s, i) => `
+    <div class="section">
+      <button class="section-btn" data-i="${i}">
+        <div class="left"><span class="section-title disp">${s.title}</span></div>
+        <span class="chev ${s.open ? 'open' : ''}">▾</span>
+      </button>
+      <div class="section-body" style="display:${s.open ? 'block' : 'none'}">${s.html}</div>
+    </div>`).join("");
+  el.querySelectorAll(".section-btn").forEach(btn => {
+    btn.onclick = () => {
+      const body = btn.parentElement.querySelector(".section-body");
+      const chev = btn.querySelector(".chev");
+      const isOpen = body.style.display === "block";
+      body.style.display = isOpen ? "none" : "block";
+      chev.classList.toggle("open", !isOpen);
+    };
+  });
+}
+
+/* ============================================================
+   TABS + INIT
+   ============================================================ */
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.dataset.tab;
+    document.getElementById("trainTab").style.display = tab === "train" ? "block" : "none";
+    document.getElementById("progressTab").style.display = tab === "progress" ? "block" : "none";
+    document.getElementById("guideTab").style.display = tab === "guide" ? "block" : "none";
+    if (tab === "progress") renderProgress();
+  });
+});
+
+document.getElementById("unitBtn").textContent = unit.toUpperCase();
+document.getElementById("unitBtn").onclick = () => {
+  unit = unit === "lb" ? "kg" : "lb";
+  localStorage.setItem("ivneet_unit_pref", unit);
+  document.getElementById("unitBtn").textContent = unit.toUpperCase();
+};
+
+document.getElementById("todayLabel").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+
+(async function init() {
+  await checkConnection();
+  await loadSession(currentDate, currentWorkoutId);
+  renderTrain();
+  renderGuide();
+})();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
