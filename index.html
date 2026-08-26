@@ -405,7 +405,28 @@ async function writeSet(exIdx, setIdx, ex) {
   if (error) { setStatus("error", error.message); return; }
   currentLog[key] = { ...v, rowId: data.id, perSide: !!exercisePerSide[exIdx] };
   setStatus("saved");
-  renderTrain(); // refresh progress bar
+  refreshProgressUI(); // update counts/checkmarks in place — never touch inputs while typing
+}
+
+function refreshProgressUI() {
+  const w = workoutById(currentWorkoutId);
+  let totalSets = 0, doneSets = 0;
+  w.exercises.forEach((ex, ei) => {
+    const setCount = ex.sets + (extraSets[ei] || 0);
+    for (let s = 0; s < setCount; s++) {
+      totalSets++;
+      const isDone = !!currentLog[`${ei}-${s}`]?.done;
+      if (isDone) doneSets++;
+      const dot = document.querySelector(`.set-progress > div[data-dot="${ei}-${s}"]`);
+      if (dot) dot.classList.toggle("done", isDone);
+      const checkBtn = document.querySelector(`button[data-ex="${ei}"][data-set="${s}"][data-field="done"]`);
+      if (checkBtn) checkBtn.innerHTML = chalkCheckSVG(isDone);
+    }
+  });
+  const fill = document.getElementById("progressFill");
+  const count = document.getElementById("progressCount");
+  if (fill) fill.style.width = (totalSets ? (doneSets / totalSets * 100) : 0) + "%";
+  if (count) count.textContent = `${doneSets}/${totalSets} sets`;
 }
 
 function queueSave(exIdx, setIdx, ex) {
@@ -487,8 +508,8 @@ function renderTrain() {
     <div class="day-title disp">${w.title}</div>
     <div class="day-focus mono">${w.focus}</div>
     <div class="progress-row">
-      <div class="progress-track"><div class="progress-fill" style="width:${totalSets ? (doneSets/totalSets*100) : 0}%"></div></div>
-      <div class="progress-count mono">${doneSets}/${totalSets} sets</div>
+      <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:${totalSets ? (doneSets/totalSets*100) : 0}%"></div></div>
+      <div class="progress-count mono" id="progressCount">${doneSets}/${totalSets} sets</div>
     </div>
     <div class="cue-box">${w.cue}</div>
   `;
@@ -520,7 +541,7 @@ function renderTrain() {
     }
     html += `</div>
       <div class="set-progress">`;
-    for (let s = 0; s < setCount; s++) html += `<div class="${currentLog[`${ei}-${s}`]?.done ? 'done' : ''}"></div>`;
+    for (let s = 0; s < setCount; s++) html += `<div data-dot="${ei}-${s}" class="${currentLog[`${ei}-${s}`]?.done ? 'done' : ''}"></div>`;
     html += `</div>
       <button class="pill" style="margin:2px 0 12px" data-addset-ex="${ei}">+ Add extra set</button>
       </div>`;
@@ -581,6 +602,7 @@ function renderTrain() {
       const key = `${ei}-${s}`;
       const cur = currentLog[key] || {};
       currentLog[key] = { ...cur, done: !cur.done };
+      t.innerHTML = chalkCheckSVG(currentLog[key].done); // instant feedback, no re-render
       writeSet(ei, s, w.exercises[ei]);
     });
   });
