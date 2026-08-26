@@ -283,9 +283,14 @@ const workoutById = (id) => WORKOUTS.find(w => w.id === id);
 let unit = localStorage.getItem("ivneet_unit_pref") || "lb"; // unit label only, not data — safe to keep local
 let currentDate = new Date().toISOString().slice(0,10);
 let currentWorkoutId = "day1";
-let currentLog = {}; // { "exIdx-setIdx": {weight, reps, done, rowId} }
+let currentLog = {}; // { "exIdx-setIdx": {weight, reps, done, rowId, perSide} }
+let exercisePerSide = {}; // { exIdx: boolean } — total vs per-side weight, per exercise
+let extraSets = {}; // { exIdx: number } — sets logged beyond the program's planned count
 let saveTimer = null;
 let progressWorkoutId = "day1";
+let progressView = "day1"; // a WORKOUTS id, or the special string "cardio"
+let cardioEntry = { minutes: "", done: false, notes: "", rowId: null };
+let cardioSaveTimer = null;
 
 /* ============================================================
    CHALK CHECK SVG
@@ -325,6 +330,8 @@ async function checkConnection() {
    ============================================================ */
 async function loadSession(dateStr, workoutId) {
   currentLog = {};
+  exercisePerSide = {};
+  extraSets = {};
   if (!sb) return;
   const { data, error } = await sb.from("logs")
     .select("*")
@@ -332,13 +339,32 @@ async function loadSession(dateStr, workoutId) {
     .eq("workout", workoutId);
   if (error) { console.error(error); return; }
   const w = workoutById(workoutId);
+  const maxSetSeen = {};
   (data || []).forEach(row => {
     const exIdx = w.exercises.findIndex(e => e.name === row.exercise);
     if (exIdx === -1) return;
     currentLog[`${exIdx}-${row.set_number - 1}`] = {
-      weight: row.weight ?? "", reps: row.actual_reps ?? "", done: !!row.done, rowId: row.id
+      weight: row.weight ?? "", reps: row.actual_reps ?? "", done: !!row.done,
+      rowId: row.id, perSide: !!row.weight_per_side
     };
+    if (row.weight_per_side) exercisePerSide[exIdx] = true;
+    maxSetSeen[exIdx] = Math.max(maxSetSeen[exIdx] || 0, row.set_number);
   });
+  w.exercises.forEach((ex, ei) => {
+    const seen = maxSetSeen[ei] || 0;
+    if (seen > ex.sets) extraSets[ei] = seen - ex.sets;
+  });
+  await loadCardio(dateStr);
+}
+
+async function loadCardio(dateStr) {
+  cardioEntry = { minutes: "", done: false, notes: "", rowId: null };
+  if (!sb) return;
+  const { data, error } = await sb.from("cardio").select("*").eq("date", dateStr).maybeSingle();
+  if (error) { console.error(error); return; }
+  if (data) {
+    cardioEntry = { minutes: data.minutes ?? "", done: !!data.done, notes: data.notes ?? "", rowId: data.id };
+  }
 }
 
 function setStatus(state, msg) {
@@ -370,13 +396,14 @@ async function writeSet(exIdx, setIdx, ex) {
     weight: v.weight === "" || v.weight == null ? null : Number(v.weight),
     actual_reps: v.reps === "" || v.reps == null ? null : Number(v.reps),
     done: !!v.done,
+    weight_per_side: !!exercisePerSide[exIdx],
   };
   const { data, error } = await sb.from("logs")
     .upsert(row, { onConflict: "date,workout,exercise,set_number" })
     .select()
     .single();
   if (error) { setStatus("error", error.message); return; }
-  currentLog[key] = { ...v, rowId: data.id };
+  currentLog[key] = { ...v, rowId: data.id, perSide: !!exercisePerSide[exIdx] };
   setStatus("saved");
   renderTrain(); // refresh progress bar
 }
@@ -384,6 +411,50 @@ async function writeSet(exIdx, setIdx, ex) {
 function queueSave(exIdx, setIdx, ex) {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => writeSet(exIdx, setIdx, ex), 350);
+}
+
+function togglePerSide(exIdx) {
+  exercisePerSide[exIdx] = !exercisePerSide[exIdx];
+  renderTrain();
+}
+
+function addExtraSet(exIdx) {
+  extraSets[exIdx] = (extraSets[exIdx] || 0) + 1;
+  renderTrain();
+}
+
+let lastCardioSaveOk = true;
+async function writeCardio() {
+  if (!sb) { setCardioStatus("error", "not configured"); return; }
+  setCardioStatus("saving");
+  const row = {
+    date: currentDate,
+    minutes: cardioEntry.minutes === "" || cardioEntry.minutes == null ? null : Number(cardioEntry.minutes),
+    done: !!cardioEntry.done,
+    notes: cardioEntry.notes || null,
+  };
+  const { data, error } = await sb.from("cardio")
+    .upsert(row, { onConflict: "date" })
+    .select()
+    .single();
+  if (error) { setCardioStatus("error", error.message); return; }
+  cardioEntry.rowId = data.id;
+  setCardioStatus("saved");
+}
+
+function queueCardioSave() {
+  clearTimeout(cardioSaveTimer);
+  cardioSaveTimer = setTimeout(writeCardio, 350);
+}
+
+function setCardioStatus(state, msg) {
+  const el = document.getElementById("cardioStatusLine");
+  if (!el) return;
+  el.className = "status-line " + state;
+  if (state === "saving") el.textContent = "Saving…";
+  else if (state === "saved") el.textContent = "✓ Saved";
+  else if (state === "error") el.innerHTML = `⚠ ${msg || "Save failed"} <button onclick="writeCardio()">Retry</button>`;
+  else el.textContent = "";
 }
 
 function renderTrain() {
@@ -394,7 +465,8 @@ function renderTrain() {
 
   let totalSets = 0, doneSets = 0;
   w.exercises.forEach((ex, ei) => {
-    for (let s = 0; s < ex.sets; s++) {
+    const setCount = ex.sets + (extraSets[ei] || 0);
+    for (let s = 0; s < setCount; s++) {
       totalSets++;
       if (currentLog[`${ei}-${s}`]?.done) doneSets++;
     }
@@ -423,8 +495,8 @@ function renderTrain() {
 
   w.exercises.forEach((ex, ei) => {
     const unitLabel = ex.unit === "sec" ? "sec" : "reps";
-    let done = 0;
-    for (let s = 0; s < ex.sets; s++) if (currentLog[`${ei}-${s}`]?.done) done++;
+    const setCount = ex.sets + (extraSets[ei] || 0);
+    const perSide = !!exercisePerSide[ei];
     html += `<div class="exercise-card">
       <div class="exercise-head">
         <div>
@@ -433,13 +505,14 @@ function renderTrain() {
         </div>
         <a class="video-link mono" href="${ex.video}" target="_blank" rel="noopener noreferrer">▶ form</a>
       </div>
+      ${ex.weight ? `<button class="pill" style="margin-top:8px" data-perside-ex="${ei}">${perSide ? "◐ Per side" : "◯ Total weight"}</button>` : ""}
       <div>`;
-    for (let s = 0; s < ex.sets; s++) {
+    for (let s = 0; s < setCount; s++) {
       const v = currentLog[`${ei}-${s}`] || { weight: "", reps: "", done: false };
       html += `<div class="set-row">
         <div class="set-idx">${s+1}</div>
         ${ex.weight
-          ? `<input type="number" inputmode="decimal" placeholder="${ex.weightLabel === 'Assist' ? 'assist lb' : 'lb'}" value="${v.weight ?? ''}" data-ex="${ei}" data-set="${s}" data-field="weight" />`
+          ? `<input type="number" inputmode="decimal" placeholder="${ex.weightLabel === 'Assist' ? 'assist' : ''} ${perSide ? '/side' : 'total'}" value="${v.weight ?? ''}" data-ex="${ei}" data-set="${s}" data-field="weight" />`
           : `<div class="bw-label mono">bodyweight</div>`}
         <input type="number" inputmode="numeric" placeholder="${unitLabel}" value="${v.reps ?? ''}" data-ex="${ei}" data-set="${s}" data-field="reps" />
         <button class="chalk-check" data-ex="${ei}" data-set="${s}" data-field="done">${chalkCheckSVG(v.done)}</button>
@@ -447,9 +520,39 @@ function renderTrain() {
     }
     html += `</div>
       <div class="set-progress">`;
-    for (let s = 0; s < ex.sets; s++) html += `<div class="${currentLog[`${ei}-${s}`]?.done ? 'done' : ''}"></div>`;
-    html += `</div></div>`;
+    for (let s = 0; s < setCount; s++) html += `<div class="${currentLog[`${ei}-${s}`]?.done ? 'done' : ''}"></div>`;
+    html += `</div>
+      <button class="pill" style="margin:2px 0 12px" data-addset-ex="${ei}">+ Add extra set</button>
+      </div>`;
   });
+
+  // cardio — independent of which workout is selected; tied only to the date
+  html += `
+    <div class="exercise-card">
+      <div class="exercise-head">
+        <div>
+          <div class="exercise-name disp">Cardio / Conditioning</div>
+          <div class="exercise-target mono">Logged per date, separate from lifting</div>
+        </div>
+      </div>
+      <div id="cardioStatusLine" class="status-line"></div>
+      <div class="field-row" style="margin-top:8px">
+        <div class="field">
+          <label>MINUTES</label>
+          <input type="number" inputmode="numeric" id="cardioMinutes" placeholder="min" value="${cardioEntry.minutes ?? ''}" />
+        </div>
+        <div class="field" style="display:flex;align-items:flex-end;gap:8px;">
+          <button class="chalk-check" id="cardioDoneBtn">${chalkCheckSVG(cardioEntry.done)}</button>
+          <span class="mono" style="font-size:12px;color:var(--chalk-dim)">Done</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>NOTES (optional)</label>
+        <input type="text" id="cardioNotes" placeholder="incline treadmill, bike, etc." value="${cardioEntry.notes ?? ''}"
+          style="width:100%;font-family:ui-monospace,monospace;background:var(--bg-soft);border:1px solid var(--border);border-radius:6px;color:var(--chalk);font-size:13px;padding:8px 10px;outline:none;" />
+      </div>
+    </div>
+  `;
 
   el.innerHTML = html;
 
@@ -481,6 +584,26 @@ function renderTrain() {
       writeSet(ei, s, w.exercises[ei]);
     });
   });
+  el.querySelectorAll("button[data-perside-ex]").forEach(btn => {
+    btn.addEventListener("click", (e) => togglePerSide(+e.currentTarget.dataset.persideEx));
+  });
+  el.querySelectorAll("button[data-addset-ex]").forEach(btn => {
+    btn.addEventListener("click", (e) => addExtraSet(+e.currentTarget.dataset.addsetEx));
+  });
+
+  document.getElementById("cardioMinutes").addEventListener("input", (e) => {
+    cardioEntry.minutes = e.target.value;
+    queueCardioSave();
+  });
+  document.getElementById("cardioNotes").addEventListener("input", (e) => {
+    cardioEntry.notes = e.target.value;
+    queueCardioSave();
+  });
+  document.getElementById("cardioDoneBtn").addEventListener("click", () => {
+    cardioEntry.done = !cardioEntry.done;
+    writeCardio();
+    renderTrain();
+  });
 }
 
 /* ============================================================
@@ -491,24 +614,59 @@ function bestSetLabel(entries) {
   let best = entries.find(e => e.weight != null);
   entries.forEach(e => { if (e.weight != null && best && Number(e.weight) > Number(best.weight)) best = e; });
   if (!best) best = entries[0];
-  const w = best.weight != null ? `${best.weight}${unit}` : "BW";
+  const side = best.weight_per_side ? "/side" : "";
+  const w = best.weight != null ? `${best.weight}${unit}${side}` : "BW";
   const r = best.actual_reps != null ? ` × ${best.actual_reps}` : "";
   return `${w}${r}`;
 }
 
+function jumpToEditDay(dateStr, workoutId) {
+  currentDate = dateStr;
+  currentWorkoutId = workoutId;
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.querySelector('.tab-btn[data-tab="train"]').classList.add("active");
+  document.getElementById("trainTab").style.display = "block";
+  document.getElementById("progressTab").style.display = "none";
+  document.getElementById("guideTab").style.display = "none";
+  loadSession(currentDate, currentWorkoutId).then(renderTrain);
+}
+
 async function renderProgress() {
   const el = document.getElementById("progressTab");
-  const pills = WORKOUTS.map(w => `<button class="pill ${w.id===progressWorkoutId?'active':''}" data-id="${w.id}">${w.label.split("·")[0].trim()}</button>`).join("");
+  const pills = WORKOUTS.map(w => `<button class="pill ${w.id===progressView?'active':''}" data-id="${w.id}">${w.label.split("·")[0].trim()}</button>`).join("")
+    + `<button class="pill ${progressView==='cardio'?'active':''}" data-id="cardio">🏃 Cardio</button>`;
   el.innerHTML = `<div class="pill-row">${pills}</div><div id="progressList" class="loading-note">Loading…</div>`;
 
   el.querySelectorAll(".pill").forEach(p => {
-    p.onclick = () => { progressWorkoutId = p.dataset.id; renderProgress(); };
+    p.onclick = () => { progressView = p.dataset.id; renderProgress(); };
   });
 
   if (!sb) {
     document.getElementById("progressList").innerHTML = `<div class="empty-note">Not connected — configure Supabase in index.html.</div>`;
     return;
   }
+
+  if (progressView === "cardio") {
+    const { data, error } = await sb.from("cardio").select("*").order("date", { ascending: false });
+    const listEl = document.getElementById("progressList");
+    if (error) { listEl.innerHTML = `<div class="empty-note">⚠ ${error.message}</div>`; return; }
+    if (!data || !data.length) { listEl.innerHTML = `<div class="empty-note">No cardio logged yet.</div>`; return; }
+    let html = "";
+    data.forEach(row => {
+      const dObj = new Date(row.date + "T00:00:00");
+      html += `<div class="session-card">
+        <div class="session-head">
+          <div class="session-date disp">${dObj.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</div>
+          <div class="session-count mono">${row.done ? "✓ done" : "not marked done"}</div>
+        </div>
+        <div class="session-ex-row"><span>${row.minutes != null ? row.minutes + " min" : "no duration logged"}</span><span>${row.notes || ""}</span></div>
+      </div>`;
+    });
+    listEl.outerHTML = `<div id="progressList">${html}</div>`;
+    return;
+  }
+
+  progressWorkoutId = progressView;
   const w = workoutById(progressWorkoutId);
   const { data, error } = await sb.from("logs")
     .select("*")
@@ -518,6 +676,13 @@ async function renderProgress() {
   const listEl = document.getElementById("progressList");
   if (error) { listEl.innerHTML = `<div class="empty-note">⚠ ${error.message}</div>`; return; }
   if (!data || !data.length) { listEl.innerHTML = `<div class="empty-note">No logged sessions yet for ${w.title} — ${w.focus}.</div>`; return; }
+
+  // pull cardio for just the dates this workout was logged, so a lifting day
+  // that also had cardio shows both in one card
+  const dateList = [...new Set(data.map(r => r.date))];
+  const { data: cardioRows } = await sb.from("cardio").select("*").in("date", dateList);
+  const cardioByDate = {};
+  (cardioRows || []).forEach(r => { cardioByDate[r.date] = r; });
 
   const byDate = {};
   data.forEach(row => { (byDate[row.date] = byDate[row.date] || []).push(row); });
@@ -533,8 +698,15 @@ async function renderProgress() {
     html += `<div class="session-card">
       <div class="session-head">
         <div class="session-date disp">${dObj.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</div>
-        <div class="session-count mono">${doneCount}/${totalSets} sets</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="session-count mono">${doneCount}/${totalSets}+ sets</div>
+          <button class="pill" style="padding:3px 8px" data-edit-date="${dateStr}" data-edit-workout="${progressWorkoutId}">✎ Edit</button>
+        </div>
       </div>`;
+    if (cardioByDate[dateStr]) {
+      const c = cardioByDate[dateStr];
+      html += `<div class="session-ex-row" style="color:var(--gold)"><span>🏃 Cardio</span><span>${c.minutes != null ? c.minutes + " min" : ""}${c.done ? " ✓" : ""}</span></div>`;
+    }
     w.exercises.forEach(ex => {
       const entries = rows.filter(r => r.exercise === ex.name && (r.weight != null || r.actual_reps != null));
       const label = bestSetLabel(entries);
@@ -544,6 +716,11 @@ async function renderProgress() {
     html += `</div>`;
   });
   listEl.outerHTML = `<div id="progressList">${html}</div>`;
+  document.querySelectorAll("button[data-edit-date]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      jumpToEditDay(e.currentTarget.dataset.editDate, e.currentTarget.dataset.editWorkout);
+    });
+  });
 }
 
 /* ============================================================
