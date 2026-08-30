@@ -165,11 +165,13 @@
   <div class="tabs">
     <button class="tab-btn active" data-tab="train">Train</button>
     <button class="tab-btn" data-tab="progress">Progress</button>
+    <button class="tab-btn" data-tab="notes">Notes</button>
     <button class="tab-btn" data-tab="guide">Guide</button>
   </div>
 
   <div id="trainTab"></div>
   <div id="progressTab" style="display:none"></div>
+  <div id="notesTab" style="display:none"></div>
   <div id="guideTab" style="display:none"></div>
 </div>
 
@@ -276,6 +278,7 @@ const WORKOUTS = [
   },
 ];
 const workoutById = (id) => WORKOUTS.find(w => w.id === id);
+const ALL_EXERCISE_NAMES = [...new Set(WORKOUTS.flatMap(w => w.exercises.map(e => e.name)))].sort();
 
 /* ============================================================
    STATE
@@ -283,14 +286,29 @@ const workoutById = (id) => WORKOUTS.find(w => w.id === id);
 let unit = localStorage.getItem("ivneet_unit_pref") || "lb"; // unit label only, not data — safe to keep local
 let currentDate = new Date().toISOString().slice(0,10);
 let currentWorkoutId = "day1";
-let currentLog = {}; // { "exIdx-setIdx": {weight, reps, done, rowId, perSide} }
+let currentLog = {}; // { "exIdx-setIdx": {weight, reps, done, rowId, perSide, notes, targetReps} }
 let exercisePerSide = {}; // { exIdx: boolean } — total vs per-side weight, per exercise
 let extraSets = {}; // { exIdx: number } — sets logged beyond the program's planned count
+let exerciseNotes = {}; // { exIdx: string } — this-session note per exercise
+let targetOverride = {}; // { exIdx: string } — one-time reps override for this session
 let saveTimer = null;
+let noteSaveTimer = null;
 let progressWorkoutId = "day1";
-let progressView = "day1"; // a WORKOUTS id, or the special string "cardio"
+let progressView = "week"; // "week" | "trend" | a WORKOUTS id | "cardio"
 let cardioEntry = { minutes: "", done: false, notes: "", rowId: null };
 let cardioSaveTimer = null;
+let weekOffset = 0; // 0 = this week, -1 = last week, etc. (for the Week progress view)
+let trendExercise = ALL_EXERCISE_NAMES[0];
+
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 /* ============================================================
    CHALK CHECK SVG
@@ -332,11 +350,14 @@ async function loadSession(dateStr, workoutId) {
   currentLog = {};
   exercisePerSide = {};
   extraSets = {};
+  exerciseNotes = {};
+  targetOverride = {};
   if (!sb) return;
   const { data, error } = await sb.from("logs")
     .select("*")
     .eq("date", dateStr)
-    .eq("workout", workoutId);
+    .eq("workout", workoutId)
+    .order("set_number");
   if (error) { console.error(error); return; }
   const w = workoutById(workoutId);
   const maxSetSeen = {};
@@ -349,12 +370,18 @@ async function loadSession(dateStr, workoutId) {
     };
     if (row.weight_per_side) exercisePerSide[exIdx] = true;
     maxSetSeen[exIdx] = Math.max(maxSetSeen[exIdx] || 0, row.set_number);
+    if (row.set_number === 1 && row.notes) exerciseNotes[exIdx] = row.notes;
+    if (row.set_number === 1 && row.target_reps && row.target_reps !== w.exercises[exIdx].reps) targetOverride[exIdx] = row.target_reps;
   });
   w.exercises.forEach((ex, ei) => {
     const seen = maxSetSeen[ei] || 0;
     if (seen > ex.sets) extraSets[ei] = seen - ex.sets;
   });
   await loadCardio(dateStr);
+}
+
+function effectiveReps(exIdx, ex) {
+  return targetOverride[exIdx] || ex.reps;
 }
 
 async function loadCardio(dateStr) {
@@ -391,13 +418,14 @@ async function writeSet(exIdx, setIdx, ex) {
     workout: currentWorkoutId,
     exercise: ex.name,
     set_number: setIdx + 1,
-    target_reps: ex.reps,
+    target_reps: effectiveReps(exIdx, ex),
     rir: ex.rir,
     weight: v.weight === "" || v.weight == null ? null : Number(v.weight),
     actual_reps: v.reps === "" || v.reps == null ? null : Number(v.reps),
     done: !!v.done,
     weight_per_side: !!exercisePerSide[exIdx],
   };
+  if (setIdx === 0) row.notes = exerciseNotes[exIdx] || null; // notes live on set 1's row only
   const { data, error } = await sb.from("logs")
     .upsert(row, { onConflict: "date,workout,exercise,set_number" })
     .select()
@@ -406,6 +434,36 @@ async function writeSet(exIdx, setIdx, ex) {
   currentLog[key] = { ...v, rowId: data.id, perSide: !!exercisePerSide[exIdx] };
   setStatus("saved");
   refreshProgressUI(); // update counts/checkmarks in place — never touch inputs while typing
+}
+
+function queueNoteSave(exIdx, ex) {
+  clearTimeout(noteSaveTimer);
+  noteSaveTimer = setTimeout(() => writeSet(exIdx, 0, ex), 400);
+}
+
+let editingReps = new Set(); // exIdx currently showing the inline reps-override editor
+
+function startEditReps(exIdx) {
+  editingReps.add(exIdx);
+  renderTrain();
+}
+
+function cancelEditReps(exIdx) {
+  editingReps.delete(exIdx);
+  renderTrain();
+}
+
+function confirmEditReps(exIdx, ex) {
+  const input = document.getElementById(`repsEditInput-${exIdx}`);
+  const next = (input ? input.value : "").trim();
+  targetOverride[exIdx] = next || ex.reps;
+  editingReps.delete(exIdx);
+  // re-persist target on any sets already logged this session
+  const setCount = ex.sets + (extraSets[exIdx] || 0);
+  for (let s = 0; s < setCount; s++) {
+    if (currentLog[`${exIdx}-${s}`]) writeSet(exIdx, s, ex);
+  }
+  renderTrain();
 }
 
 function refreshProgressUI() {
@@ -518,11 +576,23 @@ function renderTrain() {
     const unitLabel = ex.unit === "sec" ? "sec" : "reps";
     const setCount = ex.sets + (extraSets[ei] || 0);
     const perSide = !!exercisePerSide[ei];
+    const reps = effectiveReps(ei, ex);
+    const overridden = reps !== ex.reps;
+    const isEditing = editingReps.has(ei);
     html += `<div class="exercise-card">
       <div class="exercise-head">
         <div>
           <div class="exercise-name disp">${ex.name}</div>
-          <div class="exercise-target mono">${ex.sets} × ${ex.reps}${ex.rir !== "—" ? `  ·  RIR ${ex.rir}` : ""}${ex.weightLabel ? `  ·  ${ex.weightLabel} wt` : ""}</div>
+          <div class="exercise-target mono" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span>${ex.sets} ×</span>
+            ${isEditing
+              ? `<input type="text" id="repsEditInput-${ei}" value="${escapeHtml(reps)}" style="width:90px;font-family:ui-monospace,monospace;background:var(--bg-soft);border:1px solid var(--accent);border-radius:4px;color:var(--chalk);font-size:12px;padding:3px 6px;outline:none;" />
+                 <button class="pill" style="padding:2px 8px;border-color:var(--green);color:var(--green)" data-save-reps="${ei}">✓</button>
+                 <button class="pill" style="padding:2px 8px" data-cancel-reps="${ei}">✕</button>`
+              : `<span style="${overridden ? 'color:var(--accent);text-decoration:underline dotted' : ''}">${reps}</span>
+                 <button class="video-link mono" style="padding:2px 6px" data-override-ex="${ei}">✎</button>`}
+            ${ex.rir !== "—" ? `<span>·  RIR ${ex.rir}</span>` : ""}${ex.weightLabel ? `<span>·  ${ex.weightLabel} wt</span>` : ""}
+          </div>
         </div>
         <a class="video-link mono" href="${ex.video}" target="_blank" rel="noopener noreferrer">▶ form</a>
       </div>
@@ -543,6 +613,8 @@ function renderTrain() {
       <div class="set-progress">`;
     for (let s = 0; s < setCount; s++) html += `<div data-dot="${ei}-${s}" class="${currentLog[`${ei}-${s}`]?.done ? 'done' : ''}"></div>`;
     html += `</div>
+      <input type="text" placeholder="Notes for this exercise today (e.g. switched grip, knee felt off)…" value="${escapeHtml(exerciseNotes[ei] || '')}" data-note-ex="${ei}"
+        style="width:100%;margin:4px 0 10px;font-family:ui-monospace,monospace;background:var(--bg-soft);border:1px solid var(--border);border-radius:6px;color:var(--chalk);font-size:12.5px;padding:8px 10px;outline:none;box-sizing:border-box;" />
       <button class="pill" style="margin:2px 0 12px" data-addset-ex="${ei}">+ Add extra set</button>
       </div>`;
   });
@@ -569,7 +641,7 @@ function renderTrain() {
       </div>
       <div class="field">
         <label>NOTES (optional)</label>
-        <input type="text" id="cardioNotes" placeholder="incline treadmill, bike, etc." value="${cardioEntry.notes ?? ''}"
+        <input type="text" id="cardioNotes" placeholder="incline treadmill, bike, etc." value="${escapeHtml(cardioEntry.notes ?? '')}"
           style="width:100%;font-family:ui-monospace,monospace;background:var(--bg-soft);border:1px solid var(--border);border-radius:6px;color:var(--chalk);font-size:13px;padding:8px 10px;outline:none;" />
       </div>
     </div>
@@ -612,6 +684,32 @@ function renderTrain() {
   el.querySelectorAll("button[data-addset-ex]").forEach(btn => {
     btn.addEventListener("click", (e) => addExtraSet(+e.currentTarget.dataset.addsetEx));
   });
+  el.querySelectorAll("button[data-override-ex]").forEach(btn => {
+    btn.addEventListener("click", (e) => startEditReps(+e.currentTarget.dataset.overrideEx));
+  });
+  el.querySelectorAll("button[data-save-reps]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const ei = +e.currentTarget.dataset.saveReps;
+      confirmEditReps(ei, w.exercises[ei]);
+    });
+  });
+  el.querySelectorAll("button[data-cancel-reps]").forEach(btn => {
+    btn.addEventListener("click", (e) => cancelEditReps(+e.currentTarget.dataset.cancelReps));
+  });
+  el.querySelectorAll("input[id^='repsEditInput-']").forEach(inp => {
+    inp.addEventListener("keydown", (e) => {
+      const ei = +inp.id.replace("repsEditInput-", "");
+      if (e.key === "Enter") confirmEditReps(ei, w.exercises[ei]);
+      if (e.key === "Escape") cancelEditReps(ei);
+    });
+  });
+  el.querySelectorAll("input[data-note-ex]").forEach(inp => {
+    inp.addEventListener("input", (e) => {
+      const ei = +e.target.dataset.noteEx;
+      exerciseNotes[ei] = e.target.value;
+      queueNoteSave(ei, w.exercises[ei]);
+    });
+  });
 
   document.getElementById("cardioMinutes").addEventListener("input", (e) => {
     cardioEntry.minutes = e.target.value;
@@ -631,10 +729,19 @@ function renderTrain() {
 /* ============================================================
    PROGRESS TAB
    ============================================================ */
+function normalizedWeight(row) {
+  // per-side weight represents half the true load on the body — normalize
+  // to a total-equivalent so "best set" comparisons across a toggle stay fair
+  if (row.weight == null) return null;
+  return row.weight_per_side ? Number(row.weight) * 2 : Number(row.weight);
+}
+
 function bestSetLabel(entries) {
   if (!entries.length) return null;
   let best = entries.find(e => e.weight != null);
-  entries.forEach(e => { if (e.weight != null && best && Number(e.weight) > Number(best.weight)) best = e; });
+  entries.forEach(e => {
+    if (e.weight != null && best && normalizedWeight(e) > normalizedWeight(best)) best = e;
+  });
   if (!best) best = entries[0];
   const side = best.weight_per_side ? "/side" : "";
   const w = best.weight != null ? `${best.weight}${unit}${side}` : "BW";
@@ -649,17 +756,59 @@ function jumpToEditDay(dateStr, workoutId) {
   document.querySelector('.tab-btn[data-tab="train"]').classList.add("active");
   document.getElementById("trainTab").style.display = "block";
   document.getElementById("progressTab").style.display = "none";
+  document.getElementById("notesTab").style.display = "none";
   document.getElementById("guideTab").style.display = "none";
   loadSession(currentDate, currentWorkoutId).then(renderTrain);
 }
 
+function weekRange(offset) {
+  const today = new Date();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) + offset * 7); // Monday of target week
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const iso = (d) => d.toISOString().slice(0, 10);
+  return { start: iso(monday), end: iso(sunday), monday, sunday };
+}
+
+function svgLineChart(points, unitLabel) {
+  // points: [{x: index, label: dateStr, y: weight}], simple hand-drawn SVG, no dependency
+  if (points.length < 2) {
+    return `<div class="empty-note">Need at least 2 logged sessions to draw a trend line.</div>`;
+  }
+  const W = 400, H = 160, padL = 34, padR = 12, padT = 14, padB = 24;
+  const ys = points.map(p => p.y);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const spanY = maxY - minY || 1;
+  const xStep = (W - padL - padR) / (points.length - 1);
+  const coords = points.map((p, i) => ({
+    x: padL + i * xStep,
+    y: padT + (H - padT - padB) * (1 - (p.y - minY) / spanY),
+    ...p
+  }));
+  const path = coords.map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
+  const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="3.5" fill="var(--accent)" />`).join("");
+  const labelEvery = Math.ceil(coords.length / 5);
+  const xLabels = coords.filter((_, i) => i % labelEvery === 0 || i === coords.length - 1)
+    .map(c => `<text x="${c.x.toFixed(1)}" y="${H-6}" font-size="9" fill="var(--chalk-faint)" text-anchor="middle" font-family="ui-monospace,monospace">${new Date(c.label+"T00:00:00").toLocaleDateString(undefined,{month:'numeric',day:'numeric'})}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
+    <text x="4" y="${padT+4}" font-size="9" fill="var(--chalk-faint)" font-family="ui-monospace,monospace">${maxY}${unitLabel}</text>
+    <text x="4" y="${H-padB}" font-size="9" fill="var(--chalk-faint)" font-family="ui-monospace,monospace">${minY}${unitLabel}</text>
+    <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2" />
+    ${dots}
+    ${xLabels}
+  </svg>`;
+}
+
 async function renderProgress() {
   const el = document.getElementById("progressTab");
-  const pills = WORKOUTS.map(w => `<button class="pill ${w.id===progressView?'active':''}" data-id="${w.id}">${w.label.split("·")[0].trim()}</button>`).join("")
+  const pills = `<button class="pill ${progressView==='week'?'active':''}" data-id="week">📅 This Week</button>`
+    + `<button class="pill ${progressView==='trend'?'active':''}" data-id="trend">📈 By Exercise</button>`
+    + WORKOUTS.map(w => `<button class="pill ${w.id===progressView?'active':''}" data-id="${w.id}">${w.label.split("·")[0].trim()}</button>`).join("")
     + `<button class="pill ${progressView==='cardio'?'active':''}" data-id="cardio">🏃 Cardio</button>`;
   el.innerHTML = `<div class="pill-row">${pills}</div><div id="progressList" class="loading-note">Loading…</div>`;
 
-  el.querySelectorAll(".pill").forEach(p => {
+  el.querySelectorAll(".pill[data-id]").forEach(p => {
     p.onclick = () => { progressView = p.dataset.id; renderProgress(); };
   });
 
@@ -667,6 +816,9 @@ async function renderProgress() {
     document.getElementById("progressList").innerHTML = `<div class="empty-note">Not connected — configure Supabase in index.html.</div>`;
     return;
   }
+
+  if (progressView === "week") { await renderWeekView(); return; }
+  if (progressView === "trend") { await renderTrendView(); return; }
 
   if (progressView === "cardio") {
     const { data, error } = await sb.from("cardio").select("*").order("date", { ascending: false });
@@ -681,7 +833,7 @@ async function renderProgress() {
           <div class="session-date disp">${dObj.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</div>
           <div class="session-count mono">${row.done ? "✓ done" : "not marked done"}</div>
         </div>
-        <div class="session-ex-row"><span>${row.minutes != null ? row.minutes + " min" : "no duration logged"}</span><span>${row.notes || ""}</span></div>
+        <div class="session-ex-row"><span>${row.minutes != null ? row.minutes + " min" : "no duration logged"}</span><span>${escapeHtml(row.notes || "")}</span></div>
       </div>`;
     });
     listEl.outerHTML = `<div id="progressList">${html}</div>`;
@@ -735,6 +887,10 @@ async function renderProgress() {
       if (!label) return;
       html += `<div class="session-ex-row"><span>${ex.name}</span><span>${label}</span></div>`;
     });
+    if (rows.some(r => r.notes)) {
+      const note = rows.find(r => r.notes)?.notes;
+      html += `<div style="color:var(--chalk-faint);font-size:12px;margin-top:6px;font-style:italic">"${escapeHtml(note)}"</div>`;
+    }
     html += `</div>`;
   });
   listEl.outerHTML = `<div id="progressList">${html}</div>`;
@@ -743,6 +899,112 @@ async function renderProgress() {
       jumpToEditDay(e.currentTarget.dataset.editDate, e.currentTarget.dataset.editWorkout);
     });
   });
+}
+
+async function renderWeekView() {
+  const { start, end, monday, sunday } = weekRange(weekOffset);
+  const listEl = document.getElementById("progressList");
+  const label = `${monday.toLocaleDateString(undefined,{month:'short',day:'numeric'})} – ${sunday.toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
+
+  const [{ data: logRows, error: logErr }, { data: cardioRows }] = await Promise.all([
+    sb.from("logs").select("*").gte("date", start).lte("date", end),
+    sb.from("cardio").select("*").gte("date", start).lte("date", end),
+  ]);
+  if (logErr) { listEl.innerHTML = `<div class="empty-note">⚠ ${logErr.message}</div>`; return; }
+
+  let nav = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <button class="pill" id="weekPrev">← Prev</button>
+    <div class="mono" style="font-size:13px;color:var(--chalk)">${label}${weekOffset===0 ? " (this week)" : ""}</div>
+    <button class="pill" id="weekNext">Next →</button>
+  </div>`;
+
+  const byDate = {};
+  (logRows || []).forEach(r => {
+    if (!byDate[r.date]) byDate[r.date] = { workouts: {} };
+    if (!byDate[r.date].workouts[r.workout]) byDate[r.date].workouts[r.workout] = [];
+    byDate[r.date].workouts[r.workout].push(r);
+  });
+  const cardioByDate = {};
+  (cardioRows || []).forEach(r => { cardioByDate[r.date] = r; });
+
+  const allDates = [...new Set([...Object.keys(byDate), ...Object.keys(cardioByDate)])].sort().reverse();
+
+  if (!allDates.length) {
+    listEl.innerHTML = nav + `<div class="empty-note">Nothing logged for this week yet.</div>`;
+  } else {
+    let html = nav;
+    allDates.forEach(dateStr => {
+      const dObj = new Date(dateStr + "T00:00:00");
+      html += `<div class="session-card">
+        <div class="session-head"><div class="session-date disp">${dObj.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'})}</div></div>`;
+      const dayData = byDate[dateStr];
+      if (dayData) {
+        Object.entries(dayData.workouts).forEach(([workoutId, rows]) => {
+          const w = workoutById(workoutId);
+          const doneCount = rows.filter(r => r.done).length;
+          html += `<div class="session-ex-row"><span>${w ? w.title.replace("— ","") : workoutId}</span><span>${doneCount} sets logged</span></div>`;
+        });
+      }
+      if (cardioByDate[dateStr]) {
+        const c = cardioByDate[dateStr];
+        html += `<div class="session-ex-row" style="color:var(--gold)"><span>🏃 Cardio</span><span>${c.minutes != null ? c.minutes + " min" : ""}${c.done ? " ✓" : ""}</span></div>`;
+      }
+      html += `</div>`;
+    });
+    listEl.innerHTML = html;
+  }
+
+  document.getElementById("weekPrev").onclick = () => { weekOffset--; renderProgress(); };
+  document.getElementById("weekNext").onclick = () => { weekOffset++; renderProgress(); };
+}
+
+async function renderTrendView() {
+  const listEl = document.getElementById("progressList");
+  const options = ALL_EXERCISE_NAMES.map(n => `<option value="${n}" ${n===trendExercise?"selected":""}>${n}</option>`).join("");
+  listEl.innerHTML = `
+    <div class="field" style="margin-bottom:14px">
+      <label>EXERCISE</label>
+      <select id="trendSelect">${options}</select>
+    </div>
+    <div id="trendBody" class="loading-note">Loading…</div>
+  `;
+  document.getElementById("trendSelect").onchange = (e) => { trendExercise = e.target.value; renderTrendView(); };
+
+  const { data, error } = await sb.from("logs")
+    .select("*")
+    .eq("exercise", trendExercise)
+    .order("date", { ascending: true });
+  const body = document.getElementById("trendBody");
+  if (error) { body.innerHTML = `<div class="empty-note">⚠ ${error.message}</div>`; return; }
+
+  const byDate = {};
+  (data || []).forEach(r => { (byDate[r.date] = byDate[r.date] || []).push(r); });
+  const dates = Object.keys(byDate).sort();
+  if (!dates.length) { body.innerHTML = `<div class="empty-note">No sessions logged yet for ${trendExercise}.</div>`; return; }
+
+  const points = [];
+  dates.forEach(dateStr => {
+    const entries = byDate[dateStr].filter(r => r.weight != null);
+    if (!entries.length) return;
+    let best = entries[0];
+    entries.forEach(e => { if (normalizedWeight(e) > normalizedWeight(best)) best = e; });
+    points.push({ x: points.length, label: dateStr, y: normalizedWeight(best), reps: best.actual_reps, perSide: best.weight_per_side });
+  });
+
+  let html = points.length >= 2 ? svgLineChart(points, unit) : `<div class="empty-note">Need at least 2 logged weights to draw a trend line — here's what's logged so far:</div>`;
+  if (points.some(p => p.perSide)) {
+    html += `<div class="mono" style="font-size:10.5px;color:var(--chalk-faint);margin:-6px 0 10px">Chart shows total-equivalent load (per-side sets counted ×2) so it stays comparable.</div>`;
+  }
+  html += `<div style="margin-top:14px">`;
+  [...dates].reverse().forEach(dateStr => {
+    const entries = byDate[dateStr];
+    const label = bestSetLabel(entries.filter(r => r.weight != null || r.actual_reps != null));
+    if (!label) return;
+    const dObj = new Date(dateStr + "T00:00:00");
+    html += `<div class="session-ex-row"><span>${dObj.toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span><span>${label}</span></div>`;
+  });
+  html += `</div>`;
+  body.innerHTML = html;
 }
 
 /* ============================================================
@@ -795,6 +1057,39 @@ const GUIDE_SECTIONS = [
     </ul>` },
 ];
 
+/* ============================================================
+   NOTES TAB — every exercise note, chronological
+   ============================================================ */
+async function renderNotes() {
+  const el = document.getElementById("notesTab");
+  el.innerHTML = `<div class="loading-note">Loading…</div>`;
+  if (!sb) { el.innerHTML = `<div class="empty-note">Not connected — configure Supabase in index.html.</div>`; return; }
+
+  const { data, error } = await sb.from("logs")
+    .select("*")
+    .not("notes", "is", null)
+    .order("date", { ascending: false });
+
+  if (error) { el.innerHTML = `<div class="empty-note">⚠ ${error.message}</div>`; return; }
+  const withNotes = (data || []).filter(r => r.notes && r.notes.trim() !== "");
+  if (!withNotes.length) { el.innerHTML = `<div class="empty-note">No notes yet — add one under any exercise in Train.</div>`; return; }
+
+  let html = "";
+  withNotes.forEach(row => {
+    const w = workoutById(row.workout);
+    const dObj = new Date(row.date + "T00:00:00");
+    html += `<div class="session-card">
+      <div class="session-head">
+        <div class="session-date disp">${dObj.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</div>
+        <div class="session-count mono">${w ? w.title.replace("— ", "") : row.workout}</div>
+      </div>
+      <div class="session-ex-row" style="color:var(--chalk)"><b>${escapeHtml(row.exercise)}</b></div>
+      <div style="color:var(--chalk-dim);font-size:13px;margin-top:4px;line-height:1.5">${escapeHtml(row.notes)}</div>
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
 function renderGuide() {
   const el = document.getElementById("guideTab");
   el.innerHTML = GUIDE_SECTIONS.map((s, i) => `
@@ -826,8 +1121,10 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     const tab = btn.dataset.tab;
     document.getElementById("trainTab").style.display = tab === "train" ? "block" : "none";
     document.getElementById("progressTab").style.display = tab === "progress" ? "block" : "none";
+    document.getElementById("notesTab").style.display = tab === "notes" ? "block" : "none";
     document.getElementById("guideTab").style.display = tab === "guide" ? "block" : "none";
     if (tab === "progress") renderProgress();
+    if (tab === "notes") renderNotes();
   });
 });
 
