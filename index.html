@@ -192,99 +192,208 @@ const sb = (SUPABASE_URL.startsWith("http"))
    ============================================================ */
 const yt = (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q + " proper form tutorial")}`;
 
-const WORKOUTS = [
+// Day metadata is still static — titles, focus, and coaching cues rarely
+// change. Exercises themselves are now loaded from the database (the
+// `exercises` table) so they can be added/edited from the app.
+const WORKOUT_META = [
   {
     id: "day1", label: "Day 1 · Lower (Quads+Glutes)",
     title: "Day 1 — Lower Body", focus: "Quads + Glutes",
     cue: "Control the descent and maintain stable foot pressure. Use the deepest comfortable range you can control. Keep hips and back supported on leg press. Control both directions on leg extension. Take controlled steps on lunges. Full comfortable range on calf raises — pause at the top, lower slowly.",
-    exercises: [
-      { name: "Hack Squat", sets: 4, reps: "6–10", rir: "2", weight: true, video: yt("hack squat") },
-      { name: "Bulgarian Split Squat", sets: 3, reps: "8–10 each leg", rir: "2", weight: true, video: yt("bulgarian split squat") },
-      { name: "Leg Press", sets: 3, reps: "10–12", rir: "1–2", weight: true, video: yt("leg press") },
-      { name: "Leg Extension", sets: 3, reps: "10–15", rir: "1–2", weight: true, video: yt("leg extension") },
-      { name: "Walking Dumbbell Lunges", sets: 2, reps: "10 each leg", rir: "2", weight: true, video: yt("dumbbell walking lunge") },
-      { name: "Standing Calf Raise", sets: 3, reps: "12–15", rir: "—", weight: true, video: yt("standing calf raise") },
-    ],
   },
   {
     id: "day2", label: "Day 2 · Upper (Pull-Up+Back)",
     title: "Day 2 — Upper Body", focus: "Pull-Up Strength + Back",
     cue: "Do the pull-up work first while fresh. Keep shoulders active. Elbows straight on scapular pull-ups. Use only enough assistance for clean reps. Drive elbows down on lat pulldown. Keep chest supported on rows. Tall posture, strong grip, braced trunk on carries.",
-    exercises: [
-      { name: "Active Hang", sets: 3, reps: "20–30 sec", rir: "—", weight: false, unit: "sec", video: yt("active hang pull up") },
-      { name: "Scapular Pull-Ups", sets: 3, reps: "6–10", rir: "—", weight: false, video: yt("scapular pull up") },
-      { name: "Assisted Pull-Ups", sets: 4, reps: "4–6", rir: "1–2", weight: true, weightLabel: "Assist", video: yt("assisted pull up") },
-      { name: "Lat Pulldown", sets: 3, reps: "8–10", rir: "1–2", weight: true, video: yt("lat pulldown") },
-      { name: "Chest-Supported Row", sets: 3, reps: "8–12", rir: "1–2", weight: true, video: yt("chest supported dumbbell row") },
-      { name: "Straight-Arm Cable Pulldown", sets: 2, reps: "12–15", rir: "—", weight: true, video: yt("straight arm pulldown") },
-      { name: "Hammer Curl", sets: 3, reps: "10–12", rir: "—", weight: true, video: yt("hammer curl") },
-      { name: "Farmer's Carry", sets: 3, reps: "30–40 sec", rir: "—", weight: true, unit: "sec", video: yt("farmers carry") },
-    ],
   },
   {
     id: "day3", label: "Day 3 · Lower (Glutes+Hamstrings)",
     title: "Day 3 — Lower Body", focus: "Glutes + Hamstrings",
     cue: "Reach full hip extension without hyperextending the lower back. Push hips backward on RDLs and keep the weight close to your legs. Control the step backward on reverse lunges. Avoid excess lower-back movement on kickbacks. Control the return on abduction.",
-    exercises: [
-      { name: "Barbell Hip Thrust", sets: 4, reps: "6–10", rir: "2", weight: true, video: yt("barbell hip thrust") },
-      { name: "Romanian Deadlift", sets: 3, reps: "8–10", rir: "2", weight: true, video: yt("romanian deadlift") },
-      { name: "Reverse Lunge", sets: 3, reps: "8–10 each leg", rir: "—", weight: true, video: yt("dumbbell reverse lunge") },
-      { name: "Seated Leg Curl", sets: 3, reps: "10–12", rir: "1–2", weight: true, video: yt("seated leg curl") },
-      { name: "Cable Glute Kickback", sets: 3, reps: "12–15 each leg", rir: "—", weight: true, video: yt("cable glute kickback") },
-      { name: "Hip Abduction", sets: 3, reps: "15–20", rir: "—", weight: true, video: yt("hip abduction machine") },
-    ],
   },
   {
     id: "day4", label: "Day 4 · Upper (Push-Up+Upper)",
     title: "Day 4 — Upper Body", focus: "Push-Up Strength + Upper Body",
     cue: "Skill work comes first. Choose an elevation that allows clean reps. Lower eccentrics for about 3–5 seconds. Use a neutral grip if it's more comfortable for the shoulder. Keep the load controlled through a comfortable shoulder range.",
-    exercises: [
-      { name: "Incline Push-Up", sets: 3, reps: "8–12", rir: "—", weight: false, video: yt("incline push up") },
-      { name: "Slow Eccentric Push-Up", sets: 3, reps: "4–6", rir: "—", weight: false, video: yt("negative push up eccentric") },
-      { name: "Dumbbell Chest Press", sets: 3, reps: "8–10", rir: "2", weight: true, video: yt("dumbbell chest press") },
-      { name: "Single-Arm Cable Row", sets: 3, reps: "10–12 each side", rir: "—", weight: true, video: yt("single arm cable row") },
-      { name: "Cable Lateral Raise", sets: 3, reps: "12–15", rir: "—", weight: true, video: yt("single arm cable lateral raise") },
-      { name: "Rear Delt Fly", sets: 3, reps: "12–15", rir: "—", weight: true, video: yt("rear delt fly") },
-      { name: "Rope Triceps Pressdown", sets: 3, reps: "10–12", rir: "—", weight: true, video: yt("rope tricep pushdown") },
-      { name: "Dumbbell Biceps Curl", sets: 2, reps: "10–12", rir: "—", weight: true, video: yt("dumbbell bicep curl") },
-    ],
   },
   {
     id: "day5", label: "Day 5 · Lower (Unilateral+Glutes)",
     title: "Day 5 — Lower Body", focus: "Glutes + Unilateral Strength",
     cue: "One of the best technical days. Control both the step up and the descent. Prioritize balance and hip control over heavy weight. Resist rotation and keep the trunk stable on Pallof press.",
-    exercises: [
-      { name: "Goblet Squat", sets: 3, reps: "8–10", rir: "2", weight: true, video: yt("goblet squat") },
-      { name: "Dumbbell Step-Up", sets: 3, reps: "8–10 each leg", rir: "—", weight: true, video: yt("dumbbell step up") },
-      { name: "Single-Leg Romanian Deadlift", sets: 3, reps: "8–10 each leg", rir: "—", weight: true, video: yt("single leg romanian deadlift") },
-      { name: "Glute Bridge / Hip Thrust", sets: 3, reps: "10–12", rir: "—", weight: true, video: yt("weighted glute bridge") },
-      { name: "Leg Extension", sets: 2, reps: "12–15", rir: "—", weight: true, video: yt("leg extension") },
-      { name: "Hip Abduction", sets: 3, reps: "15–20", rir: "—", weight: true, video: yt("hip abduction machine") },
-      { name: "Pallof Press", sets: 3, reps: "10 each side", rir: "—", weight: true, video: yt("pallof press") },
-    ],
   },
   {
     id: "day6", label: "Day 6 · Performance",
     title: "Day 6 — Performance + Core", focus: "Pull-Up + Push-Up Practice + Conditioning",
     cue: "Keep this day lighter — slightly more assistance than Day 2. Choose the variation that allows clean technique. Finish with 15–20 min easy-to-moderate cardio — it should not feel like another hard workout.",
-    exercises: [
-      { name: "Assisted Pull-Up — Technique", sets: 3, reps: "5–6", rir: "—", weight: true, weightLabel: "Assist", video: yt("assisted pull up") },
-      { name: "Push-Up Practice", sets: 3, reps: "6–10", rir: "—", weight: false, video: yt("push up tutorial") },
-      { name: "Face Pull", sets: 3, reps: "12–15", rir: "—", weight: true, video: yt("cable face pull") },
-      { name: "Dead Bug", sets: 3, reps: "8–10 each side", rir: "—", weight: false, video: yt("dead bug") },
-      { name: "Hanging Knee Raise", sets: 3, reps: "8–12", rir: "—", weight: false, video: yt("hanging knee raise") },
-      { name: "Side Plank", sets: 3, reps: "20–30 sec each side", rir: "—", weight: false, unit: "sec", video: yt("side plank") },
-    ],
   },
 ];
+
+let WORKOUTS = WORKOUT_META.map(m => ({ ...m, exercises: [] })); // filled in by loadExercises() at startup
 const workoutById = (id) => WORKOUTS.find(w => w.id === id);
-const ALL_EXERCISE_NAMES = [...new Set(WORKOUTS.flatMap(w => w.exercises.map(e => e.name)))].sort();
+
+let exercisesLoadFailed = false; // true if the exercise catalog table is missing/unreachable — must be loud, not silent
+
+async function loadExercises() {
+  if (!sb) return;
+  const { data, error } = await sb.from("exercises").select("*").order("workout_id").order("sort_order");
+  if (error) {
+    console.error("failed to load exercise catalog:", error);
+    exercisesLoadFailed = true;
+    return;
+  }
+  if (!data || !data.length) {
+    // table exists but is empty — almost certainly means the one-time
+    // migration SQL hasn't been run yet, not that exercises were deleted
+    exercisesLoadFailed = true;
+    return;
+  }
+  exercisesLoadFailed = false;
+  const byWorkout = {};
+  data.forEach(row => {
+    (byWorkout[row.workout_id] = byWorkout[row.workout_id] || []).push({
+      id: row.id,
+      name: row.name,
+      sets: row.sets,
+      reps: row.reps,
+      rir: row.rir || "—",
+      weight: !!row.uses_weight,
+      weightLabel: row.weight_label || undefined,
+      unit: row.unit === "sec" ? "sec" : undefined,
+      video: yt(row.video_query || row.name),
+    });
+  });
+  WORKOUTS = WORKOUT_META.map(m => ({ ...m, exercises: byWorkout[m.id] || [] }));
+}
+
+/* ============================================================
+   EXERCISE CATALOG MANAGEMENT — add/edit/delete, shared by anyone
+   using the app (there's no login separating accounts). Deleting or
+   renaming a catalog exercise never touches historical logged rows —
+   those are stored as plain text snapshots, independent of the catalog.
+   ============================================================ */
+function toggleManageExercises() {
+  managingExercises = !managingExercises;
+  editingCatalogId = null;
+  catalogError = "";
+  renderTrain();
+}
+
+function openAddExercise() {
+  editingCatalogId = "new";
+  catalogForm = { name: "", sets: 3, reps: "8-12", rir: "—", weight: true, weightLabel: "", unit: "reps" };
+  catalogError = "";
+  renderTrain();
+}
+
+function openEditExercise(ex) {
+  editingCatalogId = ex.id;
+  catalogForm = {
+    name: ex.name, sets: ex.sets, reps: ex.reps, rir: ex.rir,
+    weight: ex.weight, weightLabel: ex.weightLabel || "", unit: ex.unit || "reps",
+  };
+  catalogError = "";
+  renderTrain();
+}
+
+function cancelCatalogEdit() {
+  editingCatalogId = null;
+  catalogError = "";
+  renderTrain();
+}
+
+function readCatalogFormFromDOM() {
+  const val = (id) => (document.getElementById(id)?.value || "").trim();
+  return {
+    name: val("catName"),
+    sets: Math.max(1, parseInt(val("catSets"), 10) || 1),
+    reps: val("catReps") || "8-12",
+    rir: val("catRir") || "—",
+    weight: !!document.getElementById("catWeight")?.checked,
+    weightLabel: val("catWeightLabel"),
+    unit: document.getElementById("catUnit")?.value || "reps",
+  };
+}
+
+let catalogSaving = false; // prevents a rapid double-tap from firing two concurrent inserts/updates
+
+async function saveCatalogEdit(workoutId) {
+  if (!sb || catalogSaving) return;
+  const form = readCatalogFormFromDOM();
+  catalogError = "";
+  if (!form.name) { catalogError = "Exercise needs a name."; renderTrain(); return; }
+  catalogSaving = true;
+  const payload = {
+    workout_id: workoutId,
+    name: form.name,
+    sets: form.sets,
+    reps: form.reps,
+    rir: form.rir,
+    uses_weight: form.weight,
+    weight_label: form.weightLabel || null,
+    unit: form.unit,
+  };
+  let error;
+  try {
+    if (editingCatalogId === "new") {
+      const w = workoutById(workoutId);
+      payload.sort_order = w.exercises.length;
+      ({ error } = await sb.from("exercises").insert(payload));
+    } else {
+      ({ error } = await sb.from("exercises").update(payload).eq("id", editingCatalogId));
+    }
+  } catch (e) {
+    error = e;
+  } finally {
+    catalogSaving = false;
+  }
+  if (error) { catalogError = "Couldn't save: " + (error.message || "network error — check your connection"); renderTrain(); return; }
+  editingCatalogId = null;
+  await loadExercises();
+  await loadSession(currentDate, currentWorkoutId);
+  renderTrain();
+}
+
+async function deleteCatalogExercise(id) {
+  if (confirmDeleteId !== id) {
+    confirmDeleteId = id;
+    renderTrain();
+    setTimeout(() => { if (confirmDeleteId === id) { confirmDeleteId = null; renderTrain(); } }, 3000);
+    return;
+  }
+  confirmDeleteId = null;
+  if (!sb) return;
+  catalogError = "";
+  let error;
+  try {
+    ({ error } = await sb.from("exercises").delete().eq("id", id));
+  } catch (e) {
+    error = e;
+  }
+  if (error) { catalogError = "Couldn't delete: " + (error.message || "network error — check your connection"); renderTrain(); return; }
+  await loadExercises();
+  await loadSession(currentDate, currentWorkoutId);
+  renderTrain();
+}
+function allExerciseNames() {
+  return [...new Set(WORKOUTS.flatMap(w => w.exercises.map(e => e.name)))].sort();
+}
 
 /* ============================================================
    STATE
    ============================================================ */
+function localDateStr(d) {
+  // Local calendar date as YYYY-MM-DD — deliberately NOT using .toISOString(),
+  // which converts to UTC and can silently shift to the next (or previous)
+  // day for anyone logging in the evening in a negative-UTC-offset timezone
+  // like US Eastern. This is what "today" should mean everywhere in the app.
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 let unit = localStorage.getItem("ivneet_unit_pref") || "lb"; // unit label only, not data — safe to keep local
-let currentDate = new Date().toISOString().slice(0,10);
+let currentDate = localDateStr(new Date());
 let currentWorkoutId = "day1";
 let currentLog = {}; // { "exIdx-setIdx": {weight, reps, done, rowId, perSide, notes, targetReps} }
 let exercisePerSide = {}; // { exIdx: boolean } — total vs per-side weight, per exercise
@@ -298,7 +407,12 @@ let progressView = "week"; // "week" | "trend" | a WORKOUTS id | "cardio"
 let cardioEntry = { minutes: "", done: false, notes: "", rowId: null };
 let cardioSaveTimer = null;
 let weekOffset = 0; // 0 = this week, -1 = last week, etc. (for the Week progress view)
-let trendExercise = ALL_EXERCISE_NAMES[0];
+let trendExercise = null; // set once the exercise catalog loads
+let managingExercises = false; // whether the "manage exercises" panel is open for the current workout
+let editingCatalogId = null; // db id of the exercise row being edited, or "new" for the add-form
+let catalogForm = {}; // working values for the open add/edit form
+let confirmDeleteId = null; // two-step delete confirmation (avoids native confirm() dialogs)
+let catalogError = ""; // inline error text for the manage-exercises panel (avoids alert() — same iOS PWA risk as prompt())
 
 function escapeHtml(str) {
   if (str == null) return "";
@@ -353,11 +467,16 @@ async function loadSession(dateStr, workoutId) {
   exerciseNotes = {};
   targetOverride = {};
   if (!sb) return;
-  const { data, error } = await sb.from("logs")
-    .select("*")
-    .eq("date", dateStr)
-    .eq("workout", workoutId)
-    .order("set_number");
+  let data, error;
+  try {
+    ({ data, error } = await sb.from("logs")
+      .select("*")
+      .eq("date", dateStr)
+      .eq("workout", workoutId)
+      .order("set_number"));
+  } catch (e) {
+    error = e;
+  }
   if (error) { console.error(error); return; }
   const w = workoutById(workoutId);
   const maxSetSeen = {};
@@ -387,7 +506,12 @@ function effectiveReps(exIdx, ex) {
 async function loadCardio(dateStr) {
   cardioEntry = { minutes: "", done: false, notes: "", rowId: null };
   if (!sb) return;
-  const { data, error } = await sb.from("cardio").select("*").eq("date", dateStr).maybeSingle();
+  let data, error;
+  try {
+    ({ data, error } = await sb.from("cardio").select("*").eq("date", dateStr).maybeSingle());
+  } catch (e) {
+    error = e;
+  }
   if (error) { console.error(error); return; }
   if (data) {
     cardioEntry = { minutes: data.minutes ?? "", done: !!data.done, notes: data.notes ?? "", rowId: data.id };
@@ -426,11 +550,16 @@ async function writeSet(exIdx, setIdx, ex) {
     weight_per_side: !!exercisePerSide[exIdx],
   };
   if (setIdx === 0) row.notes = exerciseNotes[exIdx] || null; // notes live on set 1's row only
-  const { data, error } = await sb.from("logs")
-    .upsert(row, { onConflict: "date,workout,exercise,set_number" })
-    .select()
-    .single();
-  if (error) { setStatus("error", error.message); return; }
+  let data, error;
+  try {
+    ({ data, error } = await sb.from("logs")
+      .upsert(row, { onConflict: "date,workout,exercise,set_number" })
+      .select()
+      .single());
+  } catch (e) {
+    error = e;
+  }
+  if (error) { setStatus("error", error.message || "network error — tap to retry"); return; }
   currentLog[key] = { ...v, rowId: data.id, perSide: !!exercisePerSide[exIdx] };
   setStatus("saved");
   refreshProgressUI(); // update counts/checkmarks in place — never touch inputs while typing
@@ -502,7 +631,6 @@ function addExtraSet(exIdx) {
   renderTrain();
 }
 
-let lastCardioSaveOk = true;
 async function writeCardio() {
   if (!sb) { setCardioStatus("error", "not configured"); return; }
   setCardioStatus("saving");
@@ -512,11 +640,16 @@ async function writeCardio() {
     done: !!cardioEntry.done,
     notes: cardioEntry.notes || null,
   };
-  const { data, error } = await sb.from("cardio")
-    .upsert(row, { onConflict: "date" })
-    .select()
-    .single();
-  if (error) { setCardioStatus("error", error.message); return; }
+  let data, error;
+  try {
+    ({ data, error } = await sb.from("cardio")
+      .upsert(row, { onConflict: "date" })
+      .select()
+      .single());
+  } catch (e) {
+    error = e;
+  }
+  if (error) { setCardioStatus("error", error.message || "network error — tap to retry"); return; }
   cardioEntry.rowId = data.id;
   setCardioStatus("saved");
 }
@@ -534,6 +667,114 @@ function setCardioStatus(state, msg) {
   else if (state === "saved") el.textContent = "✓ Saved";
   else if (state === "error") el.innerHTML = `⚠ ${msg || "Save failed"} <button onclick="writeCardio()">Retry</button>`;
   else el.textContent = "";
+}
+
+function catalogFormRow() {
+  const f = catalogForm;
+  return `<div class="exercise-card" style="border-color:var(--accent)">
+    <div class="field-row">
+      <div class="field" style="flex:2">
+        <label>NAME</label>
+        <input type="text" id="catName" value="${escapeHtml(f.name)}" placeholder="Exercise name" />
+      </div>
+      <div class="field">
+        <label>SETS</label>
+        <input type="number" id="catSets" value="${f.sets}" min="1" />
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>REPS</label>
+        <input type="text" id="catReps" value="${escapeHtml(f.reps)}" placeholder="8-12" />
+      </div>
+      <div class="field">
+        <label>RIR</label>
+        <input type="text" id="catRir" value="${escapeHtml(f.rir)}" placeholder="—" />
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field" style="display:flex;align-items:center;gap:8px;padding-top:20px">
+        <input type="checkbox" id="catWeight" ${f.weight ? "checked" : ""} style="width:18px;height:18px" />
+        <label style="margin:0">Uses weight</label>
+      </div>
+      <div class="field">
+        <label>WEIGHT LABEL (optional, e.g. Assist)</label>
+        <input type="text" id="catWeightLabel" value="${escapeHtml(f.weightLabel)}" />
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>UNIT</label>
+        <select id="catUnit">
+          <option value="reps" ${f.unit==="reps"?"selected":""}>reps</option>
+          <option value="sec" ${f.unit==="sec"?"selected":""}>seconds</option>
+        </select>
+      </div>
+    </div>
+    ${catalogError ? `<div class="mono" style="color:var(--accent);font-size:11.5px;margin:6px 0">⚠ ${escapeHtml(catalogError)}</div>` : ""}
+    <div style="display:flex;gap:8px;margin-top:8px 0 12px">
+      <button class="pill" style="border-color:var(--green);color:var(--green)" id="catSave">✓ Save</button>
+      <button class="pill" id="catCancel">✕ Cancel</button>
+    </div>
+  </div>`;
+}
+
+function renderManagePanel(w) {
+  let html = `<div style="margin:4px 0 16px">
+    <div class="mono" style="font-size:11px;color:var(--chalk-faint);margin-bottom:8px">
+      Changes here affect this workout for everyone using the app. Adding or editing sets/reps/RIR is always safe. <b style="color:var(--chalk)">Renaming</b> an exercise splits its history in two — old sessions stay under the old name, new ones use the new name — so for a real change, adding a new exercise is usually clearer than renaming. <b style="color:var(--chalk)">Deleting</b> never removes logged history, just hides it from the current list (it still appears in Progress, marked "no longer in catalog").
+    </div>`;
+
+  w.exercises.forEach(ex => {
+    if (editingCatalogId === ex.id) {
+      html += catalogFormRow();
+    } else {
+      const confirming = confirmDeleteId === ex.id;
+      html += `<div class="exercise-card" style="padding:10px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div class="exercise-name disp" style="font-size:14px">${escapeHtml(ex.name)}</div>
+            <div class="exercise-target mono" style="font-size:11px">${ex.sets} × ${escapeHtml(ex.reps)}${ex.rir!=="—"?` · RIR ${escapeHtml(ex.rir)}`:""}${ex.weight?"":" · bodyweight"}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="pill" style="padding:4px 8px" data-edit-catalog="${ex.id}">✎</button>
+            <button class="pill" style="padding:4px 8px;${confirming ? 'border-color:var(--accent);color:var(--accent)' : ''}" data-delete-catalog="${ex.id}">${confirming ? "Confirm?" : "🗑"}</button>
+          </div>
+        </div>
+      </div>`;
+    }
+  });
+
+  if (editingCatalogId === "new") {
+    html += catalogFormRow();
+  } else {
+    html += `<button class="pill" id="catAddNew" style="width:100%;padding:10px">+ Add new exercise to ${w.title.replace("— ","")}</button>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function wireManagePanel(w) {
+  const toggle = document.getElementById("manageToggle");
+  if (toggle) toggle.onclick = toggleManageExercises;
+  if (!managingExercises) return;
+
+  document.querySelectorAll("button[data-edit-catalog]").forEach(btn => {
+    btn.onclick = () => {
+      const id = +btn.dataset.editCatalog;
+      const ex = w.exercises.find(e => e.id === id);
+      if (ex) openEditExercise(ex);
+    };
+  });
+  document.querySelectorAll("button[data-delete-catalog]").forEach(btn => {
+    btn.onclick = () => deleteCatalogExercise(+btn.dataset.deleteCatalog);
+  });
+  const addBtn = document.getElementById("catAddNew");
+  if (addBtn) addBtn.onclick = openAddExercise;
+  const saveBtn = document.getElementById("catSave");
+  if (saveBtn) saveBtn.onclick = () => saveCatalogEdit(w.id);
+  const cancelBtn = document.getElementById("catCancel");
+  if (cancelBtn) cancelBtn.onclick = cancelCatalogEdit;
 }
 
 function renderTrain() {
@@ -570,7 +811,15 @@ function renderTrain() {
       <div class="progress-count mono" id="progressCount">${doneSets}/${totalSets} sets</div>
     </div>
     <div class="cue-box">${w.cue}</div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:4px">
+      <button class="pill" id="manageToggle">${managingExercises ? "✕ Close" : "⚙ Manage exercises"}</button>
+    </div>
+    ${managingExercises ? renderManagePanel(w) : ""}
   `;
+
+  if (!w.exercises.length && !managingExercises) {
+    html += `<div class="empty-note">No exercises in this workout yet. Tap "⚙ Manage exercises" above to add some.</div>`;
+  }
 
   w.exercises.forEach((ex, ei) => {
     const unitLabel = ex.unit === "sec" ? "sec" : "reps";
@@ -582,16 +831,16 @@ function renderTrain() {
     html += `<div class="exercise-card">
       <div class="exercise-head">
         <div>
-          <div class="exercise-name disp">${ex.name}</div>
+          <div class="exercise-name disp">${escapeHtml(ex.name)}</div>
           <div class="exercise-target mono" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span>${ex.sets} ×</span>
             ${isEditing
               ? `<input type="text" id="repsEditInput-${ei}" value="${escapeHtml(reps)}" style="width:90px;font-family:ui-monospace,monospace;background:var(--bg-soft);border:1px solid var(--accent);border-radius:4px;color:var(--chalk);font-size:12px;padding:3px 6px;outline:none;" />
                  <button class="pill" style="padding:2px 8px;border-color:var(--green);color:var(--green)" data-save-reps="${ei}">✓</button>
                  <button class="pill" style="padding:2px 8px" data-cancel-reps="${ei}">✕</button>`
-              : `<span style="${overridden ? 'color:var(--accent);text-decoration:underline dotted' : ''}">${reps}</span>
+              : `<span style="${overridden ? 'color:var(--accent);text-decoration:underline dotted' : ''}">${escapeHtml(reps)}</span>
                  <button class="video-link mono" style="padding:2px 6px" data-override-ex="${ei}">✎</button>`}
-            ${ex.rir !== "—" ? `<span>·  RIR ${ex.rir}</span>` : ""}${ex.weightLabel ? `<span>·  ${ex.weightLabel} wt</span>` : ""}
+            ${ex.rir !== "—" ? `<span>·  RIR ${escapeHtml(ex.rir)}</span>` : ""}${ex.weightLabel ? `<span>·  ${escapeHtml(ex.weightLabel)} wt</span>` : ""}
           </div>
         </div>
         <a class="video-link mono" href="${ex.video}" target="_blank" rel="noopener noreferrer">▶ form</a>
@@ -724,6 +973,8 @@ function renderTrain() {
     writeCardio();
     renderTrain();
   });
+
+  wireManagePanel(w);
 }
 
 /* ============================================================
@@ -749,6 +1000,32 @@ function bestSetLabel(entries) {
   return `${w}${r}`;
 }
 
+function fmtWeight(row) {
+  return `${row.weight}${unit}${row.weight_per_side ? "/side" : ""}`;
+}
+
+// Shows how weight moved across the sets actually logged that session —
+// e.g. "20lb → 30lb" for a ramp-up, not just one representative number.
+function setRangeLabel(entries) {
+  if (!entries.length) return null;
+  const weighted = entries.filter(e => e.weight != null).sort((a, b) => a.set_number - b.set_number);
+  if (!weighted.length) {
+    // bodyweight-only exercise — fall back to a reps range across sets
+    const repsOnly = entries.filter(e => e.actual_reps != null).sort((a, b) => a.set_number - b.set_number);
+    if (!repsOnly.length) return null;
+    const first = repsOnly[0], last = repsOnly[repsOnly.length - 1];
+    return repsOnly.length > 1 && first.actual_reps !== last.actual_reps
+      ? `${first.actual_reps} → ${last.actual_reps} reps`
+      : `${last.actual_reps} reps`;
+  }
+  const first = weighted[0], last = weighted[weighted.length - 1];
+  const lastReps = last.actual_reps != null ? ` × ${last.actual_reps}` : "";
+  if (weighted.length === 1 || normalizedWeight(first) === normalizedWeight(last)) {
+    return `${fmtWeight(last)}${lastReps}`;
+  }
+  return `${fmtWeight(first)} → ${fmtWeight(last)}${lastReps}`;
+}
+
 function jumpToEditDay(dateStr, workoutId) {
   currentDate = dateStr;
   currentWorkoutId = workoutId;
@@ -767,8 +1044,7 @@ function weekRange(offset) {
   monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) + offset * 7); // Monday of target week
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
-  const iso = (d) => d.toISOString().slice(0, 10);
-  return { start: iso(monday), end: iso(sunday), monday, sunday };
+  return { start: localDateStr(monday), end: localDateStr(sunday), monday, sunday };
 }
 
 function svgLineChart(points, unitLabel) {
@@ -883,9 +1159,20 @@ async function renderProgress() {
     }
     w.exercises.forEach(ex => {
       const entries = rows.filter(r => r.exercise === ex.name && (r.weight != null || r.actual_reps != null));
-      const label = bestSetLabel(entries);
+      const label = setRangeLabel(entries);
       if (!label) return;
-      html += `<div class="session-ex-row"><span>${ex.name}</span><span>${label}</span></div>`;
+      html += `<div class="session-ex-row"><span>${escapeHtml(ex.name)}</span><span>${escapeHtml(label)}</span></div>`;
+    });
+    // catch anything logged under a name no longer in the current catalog —
+    // e.g. an exercise since renamed or removed. The data is never gone;
+    // this just makes sure it's still visible here.
+    const catalogNames = new Set(w.exercises.map(e => e.name));
+    const loggedNames = [...new Set(rows.map(r => r.exercise))];
+    loggedNames.filter(n => !catalogNames.has(n)).forEach(name => {
+      const entries = rows.filter(r => r.exercise === name && (r.weight != null || r.actual_reps != null));
+      const label = setRangeLabel(entries);
+      if (!label) return;
+      html += `<div class="session-ex-row" style="color:var(--chalk-faint)"><span>${escapeHtml(name)} <span class="mono" style="font-size:10px">(no longer in catalog)</span></span><span>${escapeHtml(label)}</span></div>`;
     });
     if (rows.some(r => r.notes)) {
       const note = rows.find(r => r.notes)?.notes;
@@ -958,9 +1245,22 @@ async function renderWeekView() {
   document.getElementById("weekNext").onclick = () => { weekOffset++; renderProgress(); };
 }
 
+let loggedExerciseNamesCache = null; // cached distinct exercise names ever logged, refreshed each time Trend opens
+
+async function allExerciseNamesEverLogged() {
+  if (!sb) return [];
+  const { data, error } = await sb.from("logs").select("exercise");
+  if (error) { console.error(error); return []; }
+  return [...new Set((data || []).map(r => r.exercise))];
+}
+
 async function renderTrendView() {
   const listEl = document.getElementById("progressList");
-  const options = ALL_EXERCISE_NAMES.map(n => `<option value="${n}" ${n===trendExercise?"selected":""}>${n}</option>`).join("");
+  listEl.innerHTML = `<div class="loading-note">Loading…</div>`;
+  const logged = await allExerciseNamesEverLogged(); // includes exercises since renamed/deleted from the catalog
+  const names = [...new Set([...allExerciseNames(), ...logged])].sort();
+  if (!trendExercise || !names.includes(trendExercise)) trendExercise = names[0];
+  const options = names.map(n => `<option value="${escapeHtml(n)}" ${n===trendExercise?"selected":""}>${escapeHtml(n)}</option>`).join("");
   listEl.innerHTML = `
     <div class="field" style="margin-bottom:14px">
       <label>EXERCISE</label>
@@ -1136,9 +1436,18 @@ document.getElementById("unitBtn").onclick = () => {
 };
 
 document.getElementById("todayLabel").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+document.getElementById("trainTab").innerHTML = `<div class="loading-note">Loading program…</div>`;
 
 (async function init() {
   await checkConnection();
+  await loadExercises();
+  if (exercisesLoadFailed) {
+    const banner = document.getElementById("banner");
+    banner.className = "banner fail";
+    banner.textContent = "⚠ Exercise catalog not found — run the migration SQL from SETUP.md before using the app (your logged history is safe and untouched).";
+    document.getElementById("trainTab").innerHTML = `<div class="empty-note">Waiting on the one-time database setup — see the banner above. Nothing has been deleted.</div>`;
+    return;
+  }
   await loadSession(currentDate, currentWorkoutId);
   renderTrain();
   renderGuide();
