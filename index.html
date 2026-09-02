@@ -239,7 +239,7 @@ let exercisesLoadFailed = false; // true if the exercise catalog table is missin
 
 async function loadExercises() {
   if (!sb) return;
-  const { data, error } = await sb.from("exercises").select("*").order("workout_id").order("sort_order");
+  const { data, error } = await sb.from("exercises").select("*").order("workout_id").order("sort_order").order("id");
   if (error) {
     console.error("failed to load exercise catalog:", error);
     exercisesLoadFailed = true;
@@ -264,6 +264,7 @@ async function loadExercises() {
       weightLabel: row.weight_label || undefined,
       unit: row.unit === "sec" ? "sec" : undefined,
       video: yt(row.video_query || row.name),
+      sortOrder: row.sort_order, // kept so a new insert can compute a collision-safe next value, not just array length
     });
   });
   WORKOUTS = WORKOUT_META.map(m => ({ ...m, exercises: byWorkout[m.id] || [] }));
@@ -340,7 +341,7 @@ async function saveCatalogEdit(workoutId) {
   try {
     if (editingCatalogId === "new") {
       const w = workoutById(workoutId);
-      payload.sort_order = w.exercises.length;
+      payload.sort_order = w.exercises.length ? Math.max(...w.exercises.map(e => e.sortOrder ?? 0)) + 1 : 0;
       ({ error } = await sb.from("exercises").insert(payload));
     } else {
       ({ error } = await sb.from("exercises").update(payload).eq("id", editingCatalogId));
@@ -418,6 +419,24 @@ let catalogForm = {}; // working values for the open add/edit form
 let confirmDeleteId = null; // two-step delete confirmation (avoids native confirm() dialogs)
 let catalogError = ""; // inline error text for the manage-exercises panel (avoids alert() — same iOS PWA risk as prompt())
 
+// Supabase/PostgREST caps a single request at 1000 rows by default. After
+// enough months of consistent logging, any query without this would start
+// silently truncating — worst case, exactly during a backup, with no error
+// and no visible sign anything's missing. This pages through in batches
+// until a page comes back under-full, accumulating everything.
+async function fetchAllRows(buildQuery, pageSize = 1000) {
+  let all = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await buildQuery(from, from + pageSize - 1);
+    if (error) throw error;
+    all = all.concat(data || []);
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 function escapeHtml(str) {
   if (str == null) return "";
   return String(str)
@@ -464,12 +483,16 @@ async function checkConnection() {
 /* ============================================================
    TRAIN TAB
    ============================================================ */
+let sessionLoadToken = 0; // incremented on every loadSession call — guards against out-of-order network responses overwriting newer state with stale data
+
 async function loadSession(dateStr, workoutId) {
+  const myToken = ++sessionLoadToken;
   currentLog = {};
   exercisePerSide = {};
   extraSets = {};
   exerciseNotes = {};
   targetOverride = {};
+  editingReps.clear(); // exIdx is a positional index, not a stable id — unsafe to carry across a workout switch (different exercise could sit at the same index)
   if (!sb) return;
   let data, error;
   try {
@@ -481,6 +504,7 @@ async function loadSession(dateStr, workoutId) {
   } catch (e) {
     error = e;
   }
+  if (myToken !== sessionLoadToken) return; // a newer date/workout was selected while this was in flight — discard
   if (error) { console.error(error); return; }
   const w = workoutById(workoutId);
   const maxSetSeen = {};
@@ -500,14 +524,14 @@ async function loadSession(dateStr, workoutId) {
     const seen = maxSetSeen[ei] || 0;
     if (seen > ex.sets) extraSets[ei] = seen - ex.sets;
   });
-  await loadCardio(dateStr);
+  await loadCardio(dateStr, myToken);
 }
 
 function effectiveReps(exIdx, ex) {
   return targetOverride[exIdx] || ex.reps;
 }
 
-async function loadCardio(dateStr) {
+async function loadCardio(dateStr, token) {
   cardioEntry = { minutes: "", done: false, notes: "", rowId: null };
   if (!sb) return;
   let data, error;
@@ -516,6 +540,7 @@ async function loadCardio(dateStr) {
   } catch (e) {
     error = e;
   }
+  if (token !== undefined && token !== sessionLoadToken) return; // stale — a newer selection has since started
   if (error) { console.error(error); return; }
   if (data) {
     cardioEntry = { minutes: data.minutes ?? "", done: !!data.done, notes: data.notes ?? "", rowId: data.id };
@@ -1101,7 +1126,12 @@ async function renderProgress() {
   if (progressView === "trend") { await renderTrendView(); return; }
 
   if (progressView === "cardio") {
-    const { data, error } = await sb.from("cardio").select("*").order("date", { ascending: false });
+    let data, error;
+    try {
+      data = await fetchAllRows((from, to) => sb.from("cardio").select("*").order("date", { ascending: false }).range(from, to));
+    } catch (e) {
+      error = e;
+    }
     const listEl = document.getElementById("progressList");
     if (error) { listEl.innerHTML = `<div class="empty-note">⚠ ${error.message}</div>`; return; }
     if (!data || !data.length) { listEl.innerHTML = `<div class="empty-note">No cardio logged yet.</div>`; return; }
@@ -1122,10 +1152,16 @@ async function renderProgress() {
 
   progressWorkoutId = progressView;
   const w = workoutById(progressWorkoutId);
-  const { data, error } = await sb.from("logs")
-    .select("*")
-    .eq("workout", progressWorkoutId)
-    .order("date", { ascending: false });
+  let data, error;
+  try {
+    data = await fetchAllRows((from, to) => sb.from("logs")
+      .select("*")
+      .eq("workout", progressWorkoutId)
+      .order("date", { ascending: false })
+      .range(from, to));
+  } catch (e) {
+    error = e;
+  }
 
   const listEl = document.getElementById("progressList");
   if (error) { listEl.innerHTML = `<div class="empty-note">⚠ ${error.message}</div>`; return; }
@@ -1234,7 +1270,7 @@ async function renderWeekView() {
       html += `<div class="session-card">
         <button class="session-head" data-week-day-toggle="${dateStr}" style="width:100%;background:none;border:none;text-align:left;cursor:pointer;padding:0;font:inherit;display:flex;align-items:baseline;gap:6px">
           ${workoutIdsThisDay.length ? `<span class="chev ${anyExpandedThisDay?'open':''}" style="font-size:11px;color:var(--chalk-faint)">▾</span>` : ""}
-          <div class="session-date disp">${dObj.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'})}</div>
+          <span class="session-date disp">${dObj.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'})}</span>
         </button>`;
       if (dayData) {
         Object.entries(dayData.workouts).forEach(([workoutId, rows]) => {
@@ -1342,9 +1378,13 @@ let loggedExerciseNamesCache = null; // cached distinct exercise names ever logg
 
 async function allExerciseNamesEverLogged() {
   if (!sb) return [];
-  const { data, error } = await sb.from("logs").select("exercise");
-  if (error) { console.error(error); return []; }
-  return [...new Set((data || []).map(r => r.exercise))];
+  try {
+    const data = await fetchAllRows((from, to) => sb.from("logs").select("exercise").order("id").range(from, to));
+    return [...new Set(data.map(r => r.exercise))];
+  } catch (e) {
+    console.error(e);
+    return [];
+  }
 }
 
 async function renderTrendView() {
@@ -1363,10 +1403,16 @@ async function renderTrendView() {
   `;
   document.getElementById("trendSelect").onchange = (e) => { trendExercise = e.target.value; renderTrendView(); };
 
-  const { data, error } = await sb.from("logs")
-    .select("*")
-    .eq("exercise", trendExercise)
-    .order("date", { ascending: true });
+  let data, error;
+  try {
+    data = await fetchAllRows((from, to) => sb.from("logs")
+      .select("*")
+      .eq("exercise", trendExercise)
+      .order("date", { ascending: true })
+      .range(from, to));
+  } catch (e) {
+    error = e;
+  }
   const body = document.getElementById("trendBody");
   if (error) { body.innerHTML = `<div class="empty-note">⚠ ${error.message}</div>`; return; }
 
@@ -1458,10 +1504,16 @@ async function renderNotes() {
   el.innerHTML = `<div class="loading-note">Loading…</div>`;
   if (!sb) { el.innerHTML = `<div class="empty-note">Not connected — configure Supabase in index.html.</div>`; return; }
 
-  const { data, error } = await sb.from("logs")
-    .select("*")
-    .not("notes", "is", null)
-    .order("date", { ascending: false });
+  let data, error;
+  try {
+    data = await fetchAllRows((from, to) => sb.from("logs")
+      .select("*")
+      .not("notes", "is", null)
+      .order("date", { ascending: false })
+      .range(from, to));
+  } catch (e) {
+    error = e;
+  }
 
   if (error) { el.innerHTML = `<div class="empty-note">⚠ ${error.message}</div>`; return; }
   const withNotes = (data || []).filter(r => r.notes && r.notes.trim() !== "");
@@ -1488,7 +1540,7 @@ function renderGuide() {
   el.innerHTML = GUIDE_SECTIONS.map((s, i) => `
     <div class="section">
       <button class="section-btn" data-i="${i}">
-        <div class="left"><span class="section-title disp">${s.title}</span></div>
+        <span class="left"><span class="section-title disp">${s.title}</span></span>
         <span class="chev ${s.open ? 'open' : ''}">▾</span>
       </button>
       <div class="section-body" style="display:${s.open ? 'block' : 'none'}">${s.html}</div>
@@ -1547,19 +1599,16 @@ async function exportBackup() {
   setBackupStatus("saving");
   document.getElementById("backupTextArea")?.remove();
   try {
-    const [logsRes, cardioRes, exercisesRes] = await Promise.all([
-      sb.from("logs").select("*"),
-      sb.from("cardio").select("*"),
-      sb.from("exercises").select("*"),
+    const [logsData, cardioData, exercisesData] = await Promise.all([
+      fetchAllRows((from, to) => sb.from("logs").select("*").order("id").range(from, to)),
+      fetchAllRows((from, to) => sb.from("cardio").select("*").order("id").range(from, to)),
+      fetchAllRows((from, to) => sb.from("exercises").select("*").order("id").range(from, to)),
     ]);
-    if (logsRes.error) throw logsRes.error;
-    if (cardioRes.error) throw cardioRes.error;
-    if (exercisesRes.error) throw exercisesRes.error;
     const bundle = {
       exported_at: new Date().toISOString(),
-      logs: logsRes.data || [],
-      cardio: cardioRes.data || [],
-      exercises: exercisesRes.data || [],
+      logs: logsData,
+      cardio: cardioData,
+      exercises: exercisesData,
     };
     const json = JSON.stringify(bundle, null, 2);
     lastBackupJson = json;
