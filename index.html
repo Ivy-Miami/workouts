@@ -157,8 +157,12 @@
       <div class="disp title">Ivneet<span class="dot">.</span> Strength</div>
       <div class="subtitle" id="todayLabel"></div>
     </div>
-    <button class="unit-btn" id="unitBtn">LB</button>
+    <div style="display:flex;gap:6px;align-items:flex-start">
+      <button class="unit-btn" id="backupBtn" title="Download a backup of everything logged">⬇</button>
+      <button class="unit-btn" id="unitBtn">LB</button>
+    </div>
   </div>
+  <div id="backupStatus" class="status-line" style="margin:-4px 0 8px;text-align:right"></div>
 
   <div class="banner" id="banner">Connecting…</div>
 
@@ -1188,6 +1192,8 @@ async function renderProgress() {
   });
 }
 
+let expandedWeekRows = new Set(); // "date|workoutId" keys currently expanded in the Week view
+
 async function renderWeekView() {
   const { start, end, monday, sunday } = weekRange(weekOffset);
   const listEl = document.getElementById("progressList");
@@ -1197,7 +1203,7 @@ async function renderWeekView() {
     sb.from("logs").select("*").gte("date", start).lte("date", end),
     sb.from("cardio").select("*").gte("date", start).lte("date", end),
   ]);
-  if (logErr) { listEl.innerHTML = `<div class="empty-note">⚠ ${logErr.message}</div>`; return; }
+  if (logErr) { listEl.innerHTML = `<div class="empty-note">⚠ ${escapeHtml(logErr.message)}</div>`; return; }
 
   let nav = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
     <button class="pill" id="weekPrev">← Prev</button>
@@ -1229,16 +1235,71 @@ async function renderWeekView() {
         Object.entries(dayData.workouts).forEach(([workoutId, rows]) => {
           const w = workoutById(workoutId);
           const doneCount = rows.filter(r => r.done).length;
-          html += `<div class="session-ex-row"><span>${w ? w.title.replace("— ","") : workoutId}</span><span>${doneCount} sets logged</span></div>`;
+          const key = `${dateStr}|${workoutId}`;
+          const isOpen = expandedWeekRows.has(key);
+          const detailId = `weekDetail-${dateStr}-${workoutId}`;
+          html += `<button class="session-ex-row" data-week-toggle="${key}" style="width:100%;background:none;border:none;text-align:left;cursor:pointer;padding:3px 0;font:inherit">
+            <span style="display:flex;align-items:center;gap:5px"><span class="chev ${isOpen?'open':''}" style="font-size:10px">▾</span>${escapeHtml(w ? w.title.replace("— ","") : workoutId)}</span>
+            <span>${doneCount} sets logged</span>
+          </button>`;
+          html += `<div id="${detailId}" style="display:${isOpen ? 'block' : 'none'};padding:2px 0 6px 15px">`;
+          if (w) {
+            w.exercises.forEach(ex => {
+              const entries = rows.filter(r => r.exercise === ex.name && (r.weight != null || r.actual_reps != null));
+              const rangeLabel = setRangeLabel(entries);
+              if (!rangeLabel) return;
+              html += `<div class="session-ex-row" style="font-size:12px"><span>${escapeHtml(ex.name)}</span><span>${escapeHtml(rangeLabel)}</span></div>`;
+            });
+            // same fallback as the by-workout Progress view: surface anything
+            // logged under a name no longer in the current catalog
+            const catalogNames = new Set(w.exercises.map(e => e.name));
+            const loggedNames = [...new Set(rows.map(r => r.exercise))];
+            loggedNames.filter(n => !catalogNames.has(n)).forEach(name => {
+              const entries = rows.filter(r => r.exercise === name && (r.weight != null || r.actual_reps != null));
+              const rangeLabel = setRangeLabel(entries);
+              if (!rangeLabel) return;
+              html += `<div class="session-ex-row" style="font-size:12px;color:var(--chalk-faint)"><span>${escapeHtml(name)} <span class="mono" style="font-size:10px">(no longer in catalog)</span></span><span>${escapeHtml(rangeLabel)}</span></div>`;
+            });
+            const noteRow = rows.find(r => r.notes);
+            if (noteRow) {
+              html += `<div style="color:var(--chalk-faint);font-size:11.5px;margin:4px 0;font-style:italic">"${escapeHtml(noteRow.notes)}"</div>`;
+            }
+          }
+          html += `<button class="pill" style="padding:3px 8px;margin-top:4px" data-edit-date="${dateStr}" data-edit-workout="${workoutId}">✎ Edit this day</button>`;
+          html += `</div>`;
         });
       }
       if (cardioByDate[dateStr]) {
         const c = cardioByDate[dateStr];
         html += `<div class="session-ex-row" style="color:var(--gold)"><span>🏃 Cardio</span><span>${c.minutes != null ? c.minutes + " min" : ""}${c.done ? " ✓" : ""}</span></div>`;
+        if (c.notes) html += `<div style="color:var(--chalk-faint);font-size:11.5px;margin:2px 0 4px;padding-left:15px;font-style:italic">"${escapeHtml(c.notes)}"</div>`;
       }
       html += `</div>`;
     });
     listEl.innerHTML = html;
+
+    listEl.querySelectorAll("button[data-week-toggle]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const key = btn.dataset.weekToggle;
+        const [dateStr, workoutId] = key.split("|");
+        const detail = document.getElementById(`weekDetail-${dateStr}-${workoutId}`);
+        const chev = btn.querySelector(".chev");
+        if (expandedWeekRows.has(key)) {
+          expandedWeekRows.delete(key);
+          if (detail) detail.style.display = "none";
+          if (chev) chev.classList.remove("open");
+        } else {
+          expandedWeekRows.add(key);
+          if (detail) detail.style.display = "block";
+          if (chev) chev.classList.add("open");
+        }
+      });
+    });
+    listEl.querySelectorAll("button[data-edit-date]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        jumpToEditDay(e.currentTarget.dataset.editDate, e.currentTarget.dataset.editWorkout);
+      });
+    });
   }
 
   document.getElementById("weekPrev").onclick = () => { weekOffset--; renderProgress(); };
@@ -1434,6 +1495,101 @@ document.getElementById("unitBtn").onclick = () => {
   localStorage.setItem("ivneet_unit_pref", unit);
   document.getElementById("unitBtn").textContent = unit.toUpperCase();
 };
+
+function setBackupStatus(state, msg) {
+  const el = document.getElementById("backupStatus");
+  if (!el) return;
+  el.className = "status-line " + state;
+  if (state === "saving") el.textContent = "Preparing backup…";
+  else if (state === "saved") el.textContent = "✓ Downloaded — if nothing appeared, use \"View as text\" below";
+  else if (state === "error") el.innerHTML = `⚠ ${escapeHtml(msg || "backup failed")} <button onclick="exportBackup()">Retry</button>`;
+  else el.textContent = "";
+}
+
+let backupInProgress = false; // prevents a double-tap from firing two exports at once
+let lastBackupJson = null; // kept in memory so "View as text" never needs to re-fetch
+
+async function exportBackup() {
+  if (!sb || backupInProgress) return;
+  backupInProgress = true;
+  setBackupStatus("saving");
+  document.getElementById("backupTextArea")?.remove();
+  try {
+    const [logsRes, cardioRes, exercisesRes] = await Promise.all([
+      sb.from("logs").select("*"),
+      sb.from("cardio").select("*"),
+      sb.from("exercises").select("*"),
+    ]);
+    if (logsRes.error) throw logsRes.error;
+    if (cardioRes.error) throw cardioRes.error;
+    if (exercisesRes.error) throw exercisesRes.error;
+    const bundle = {
+      exported_at: new Date().toISOString(),
+      logs: logsRes.data || [],
+      cardio: cardioRes.data || [],
+      exercises: exercisesRes.data || [],
+    };
+    const json = JSON.stringify(bundle, null, 2);
+    lastBackupJson = json;
+
+    // Primary path: trigger a normal file download. Works reliably on
+    // desktop and Android Chrome.
+    try {
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ivneet-strength-backup-${localDateStr(new Date())}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("download trigger failed, text fallback still available:", e);
+    }
+
+    setBackupStatus("saved");
+    showBackupTextFallback(json);
+  } catch (e) {
+    setBackupStatus("error", e.message || "network error — tap to retry");
+  } finally {
+    backupInProgress = false;
+  }
+}
+
+function showBackupTextFallback(json) {
+  const container = document.getElementById("backupStatus");
+  if (!container) return;
+  const wrap = document.createElement("div");
+  wrap.id = "backupTextArea";
+  wrap.style.textAlign = "left";
+  wrap.style.marginTop = "6px";
+  wrap.innerHTML = `
+    <button class="pill" id="backupToggleText" style="font-size:11px;padding:4px 8px">View as text (fallback if the download didn't appear)</button>
+    <div id="backupTextBody" style="display:none;margin-top:6px">
+      <textarea readonly style="width:100%;height:90px;font-family:ui-monospace,monospace;font-size:10px;background:var(--bg-soft);border:1px solid var(--border);border-radius:5px;color:var(--chalk-dim);padding:8px;box-sizing:border-box;">${escapeHtml(json)}</textarea>
+      <button class="pill" id="backupCopyBtn" style="margin-top:6px;font-size:11px;padding:4px 8px">Copy to clipboard</button>
+      <span id="backupCopyMsg" class="mono" style="font-size:10.5px;color:var(--chalk-faint);margin-left:6px"></span>
+    </div>
+  `;
+  container.appendChild(wrap);
+  document.getElementById("backupToggleText").onclick = () => {
+    const body = document.getElementById("backupTextBody");
+    body.style.display = body.style.display === "none" ? "block" : "none";
+  };
+  document.getElementById("backupCopyBtn").onclick = async () => {
+    const msgEl = document.getElementById("backupCopyMsg");
+    try {
+      await navigator.clipboard.writeText(json);
+      msgEl.textContent = "Copied";
+    } catch (e) {
+      msgEl.textContent = "Select the text above and copy manually";
+    }
+    setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 3000);
+  };
+}
+
+document.getElementById("backupBtn").onclick = exportBackup;
 
 document.getElementById("todayLabel").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 document.getElementById("trainTab").innerHTML = `<div class="loading-note">Loading program…</div>`;
