@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Ivneet · Strength</title>
-<meta name="theme-color" content="#161510" />
+<meta name="theme-color" content="#f5f9fd" />
 <link rel="manifest" href="manifest.json" />
 <link rel="apple-touch-icon" href="icon-192.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -12,26 +12,27 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
-    --bg: #161510;
-    --bg-soft: #1c1a14;
-    --surface: #211f18;
-    --surface-raised: #292619;
-    --border: #3a3626;
-    --border-soft: #2c2a1e;
-    --chalk: #efe9d8;
-    --chalk-dim: #9c977f;
-    --chalk-faint: #66614e;
-    --accent: #e2571f;
-    --accent-dim: #7a3820;
-    --gold: #c9a03e;
-    --green: #7e9c5a;
+    --bg: #f5f9fd;
+    --bg-soft: #eaf2fb;
+    --surface: #ffffff;
+    --surface-raised: #e3edf9;
+    --border: #c7dcef;
+    --border-soft: #dceaf7;
+    --chalk: #12283f;
+    --chalk-dim: #4c6c8a;
+    --chalk-faint: #4f6c8d;
+    --accent: #2563eb;
+    --accent-dim: #dbe8fd;
+    --gold: #0e7490;
+    --green: #15803d;
+    --error: #dc2626;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); }
   body {
     color: var(--chalk);
     font-family: -apple-system, "Segoe UI", sans-serif;
-    background-image: radial-gradient(ellipse at top, rgba(226,87,31,0.07), transparent 55%);
+    background-image: radial-gradient(ellipse at top, rgba(37,99,235,0.06), transparent 55%);
     min-height: 100vh;
     padding-bottom: env(safe-area-inset-bottom);
   }
@@ -58,8 +59,8 @@
     margin-bottom: 12px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border);
     background: var(--surface); color: var(--chalk-faint);
   }
-  .banner.ok { background: rgba(126,156,90,0.12); border-color: #4a5c38; color: var(--green); }
-  .banner.fail { background: rgba(226,87,31,0.14); border-color: var(--accent); color: var(--accent); }
+  .banner.ok { background: rgba(21,128,61,0.1); border-color: var(--green); color: var(--green); }
+  .banner.fail { background: rgba(220,38,38,0.1); border-color: var(--error); color: var(--error); }
 
   .tabs { display: flex; gap: 4px; margin-bottom: 16px; background: var(--surface); border-radius: 8px; padding: 3px; border: 1px solid var(--border); }
   .tab-btn {
@@ -80,7 +81,7 @@
   .status-line.saving { color: var(--chalk-faint); }
   .status-line.saved { color: var(--green); }
   .status-line.error button {
-    font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--bg); background: var(--accent);
+    font-family: ui-monospace, monospace; font-size: 11.5px; color: #ffffff; background: var(--error);
     border: none; border-radius: 5px; padding: 4px 10px; cursor: pointer;
   }
 
@@ -277,8 +278,9 @@ async function loadExercises() {
   }
   exercisesLoadFailed = false;
   const byWorkout = {};
+  const hiddenByWorkout = {};
   data.forEach(row => {
-    (byWorkout[row.workout_id] = byWorkout[row.workout_id] || []).push({
+    const mapped = {
       id: row.id,
       name: row.name,
       sets: row.sets,
@@ -288,10 +290,21 @@ async function loadExercises() {
       weightLabel: row.weight_label || undefined,
       unit: row.unit === "sec" ? "sec" : undefined,
       video: yt(row.video_query || row.name),
+      videoQuery: row.video_query || "", // kept raw (not just the built URL) so the edit form can show/change it
       sortOrder: row.sort_order, // kept so a new insert can compute a collision-safe next value, not just array length
-    });
+      hidden: !!row.hidden,
+    };
+    if (mapped.hidden) {
+      (hiddenByWorkout[row.workout_id] = hiddenByWorkout[row.workout_id] || []).push(mapped);
+    } else {
+      (byWorkout[row.workout_id] = byWorkout[row.workout_id] || []).push(mapped);
+    }
   });
-  WORKOUTS = WORKOUT_META.map(m => ({ ...m, exercises: byWorkout[m.id] || [] }));
+  WORKOUTS = WORKOUT_META.map(m => ({
+    ...m,
+    exercises: byWorkout[m.id] || [],
+    hiddenExercises: hiddenByWorkout[m.id] || [],
+  }));
 }
 
 /* ============================================================
@@ -309,7 +322,7 @@ function toggleManageExercises() {
 
 function openAddExercise() {
   editingCatalogId = "new";
-  catalogForm = { name: "", sets: 3, reps: "8-12", rir: "—", weight: true, weightLabel: "", unit: "reps" };
+  catalogForm = { name: "", sets: 3, reps: "8-12", rir: "—", weight: true, weightLabel: "", unit: "reps", videoQuery: "" };
   catalogError = "";
   renderTrain();
 }
@@ -319,6 +332,7 @@ function openEditExercise(ex) {
   catalogForm = {
     name: ex.name, sets: ex.sets, reps: ex.reps, rir: ex.rir,
     weight: ex.weight, weightLabel: ex.weightLabel || "", unit: ex.unit || "reps",
+    videoQuery: ex.videoQuery || "",
   };
   catalogError = "";
   renderTrain();
@@ -340,6 +354,7 @@ function readCatalogFormFromDOM() {
     weight: !!document.getElementById("catWeight")?.checked,
     weightLabel: val("catWeightLabel"),
     unit: document.getElementById("catUnit")?.value || "reps",
+    videoQuery: val("catVideoQuery"),
   };
 }
 
@@ -360,6 +375,7 @@ async function saveCatalogEdit(workoutId) {
     uses_weight: form.weight,
     weight_label: form.weightLabel || null,
     unit: form.unit,
+    video_query: form.videoQuery || null,
   };
   let error;
   try {
@@ -382,23 +398,18 @@ async function saveCatalogEdit(workoutId) {
   renderTrain();
 }
 
-async function deleteCatalogExercise(id) {
-  if (confirmDeleteId !== id) {
-    confirmDeleteId = id;
-    renderTrain();
-    setTimeout(() => { if (confirmDeleteId === id) { confirmDeleteId = null; renderTrain(); } }, 3000);
-    return;
-  }
-  confirmDeleteId = null;
+// Hiding (not deleting) an exercise is fully reversible, so this no longer
+// needs a destructive-action confirmation the way permanent delete did.
+async function setExerciseHidden(id, hidden) {
   if (!sb) return;
   catalogError = "";
   let error;
   try {
-    ({ error } = await sb.from("exercises").delete().eq("id", id));
+    ({ error } = await sb.from("exercises").update({ hidden }).eq("id", id));
   } catch (e) {
     error = e;
   }
-  if (error) { catalogError = "Couldn't delete: " + (error.message || "network error — check your connection"); renderTrain(); return; }
+  if (error) { catalogError = `Couldn't ${hidden ? "hide" : "restore"}: ` + (error.message || "network error — check your connection"); renderTrain(); return; }
   await loadExercises();
   await loadSession(currentDate, currentWorkoutId);
   renderTrain();
@@ -453,6 +464,7 @@ function localDateStr(d) {
 
 let unit = localStorage.getItem("ivneet_unit_pref") || "lb"; // unit label only, not data — safe to keep local
 let currentDate = localDateStr(new Date());
+let lastKnownRealDate = currentDate; // tracks the actual calendar date, separately from whichever date the person is viewing
 let currentWorkoutId = "day1";
 let currentLog = {}; // { "exIdx-setIdx": {weight, reps, done, rowId, perSide, notes, targetReps} }
 let exercisePerSide = {}; // { exIdx: boolean } — total vs per-side weight, per exercise
@@ -471,7 +483,6 @@ let trendExercise = null; // set once the exercise catalog loads
 let managingExercises = false; // whether the "manage exercises" panel is open for the current workout
 let editingCatalogId = null; // db id of the exercise row being edited, or "new" for the add-form
 let catalogForm = {}; // working values for the open add/edit form
-let confirmDeleteId = null; // two-step delete confirmation (avoids native confirm() dialogs)
 let catalogError = ""; // inline error text for the manage-exercises panel (avoids alert() — same iOS PWA risk as prompt())
 let editingWorkoutMeta = false; // whether the day-info (title/focus/cue) edit form is open
 let workoutMetaForm = {}; // working values for that form
@@ -595,7 +606,6 @@ async function loadSession(dateStr, workoutId) {
   metaError = "";
   editingCatalogId = null; // an open "add/edit exercise" form belongs to the workout it was opened on — carrying it across a switch could save into the wrong workout
   catalogError = "";
-  confirmDeleteId = null;
   if (!sb) return;
   let data, error;
   try {
@@ -628,10 +638,44 @@ async function loadSession(dateStr, workoutId) {
     if (seen > ex.sets) extraSets[ei] = seen - ex.sets;
   });
   await loadCardio(dateStr, myToken);
+  await loadLastSessionLabels(w, dateStr, myToken);
 }
 
 function effectiveReps(exIdx, ex) {
   return targetOverride[exIdx] || ex.reps;
+}
+
+let lastSessionLabels = {}; // { exIdx: string } — what you did last time, shown inline in Train
+
+async function loadLastSessionLabels(w, beforeDate, token) {
+  lastSessionLabels = {};
+  if (!sb) return;
+  let data, error;
+  try {
+    data = await fetchAllRows((from, to) => sb.from("logs")
+      .select("*")
+      .eq("workout", w.id)
+      .lt("date", beforeDate)
+      .order("date", { ascending: false })
+      .range(from, to));
+  } catch (e) {
+    error = e;
+  }
+  if (token !== undefined && token !== sessionLoadToken) return; // a newer date/workout was picked meanwhile — discard
+  if (error) { console.error("couldn't load last-session labels:", error); return; }
+
+  const byExercise = {};
+  (data || []).forEach(row => {
+    (byExercise[row.exercise] = byExercise[row.exercise] || []).push(row);
+  });
+  w.exercises.forEach((ex, ei) => {
+    const rows = byExercise[ex.name];
+    if (!rows || !rows.length) return;
+    const mostRecentDate = rows[0].date; // rows are already sorted newest-first
+    const sameDate = rows.filter(r => r.date === mostRecentDate && (r.weight != null || r.actual_reps != null || r.done));
+    const label = setRangeLabel(sameDate);
+    if (label) lastSessionLabels[ei] = label;
+  });
 }
 
 async function loadCardio(dateStr, token) {
@@ -885,7 +929,13 @@ function catalogFormRow() {
         </select>
       </div>
     </div>
-    ${catalogError ? `<div class="mono" style="color:var(--accent);font-size:11.5px;margin:6px 0">⚠ ${escapeHtml(catalogError)}</div>` : ""}
+    <div class="field-row">
+      <div class="field">
+        <label>FORM VIDEO SEARCH TERM (optional — leave blank to just search the exercise name)</label>
+        <input type="text" id="catVideoQuery" value="${escapeHtml(f.videoQuery || "")}" placeholder="e.g. bulgarian split squat" />
+      </div>
+    </div>
+    ${catalogError ? `<div class="mono" style="color:var(--error);font-size:11.5px;margin:6px 0">⚠ ${escapeHtml(catalogError)}</div>` : ""}
     <div style="display:flex;gap:8px;margin-top:8px 0 12px">
       <button class="pill" style="border-color:var(--green);color:var(--green)" id="catSave">✓ Save</button>
       <button class="pill" id="catCancel">✕ Cancel</button>
@@ -893,39 +943,62 @@ function catalogFormRow() {
   </div>`;
 }
 
+let showHiddenExercises = false;
+
 function renderManagePanel(w) {
   let html = `<div style="margin:4px 0 16px">
-    <div class="mono" style="font-size:11px;color:var(--chalk-faint);margin-bottom:8px">
-      Changes here affect this workout for everyone using the app. Adding or editing sets/reps/RIR is always safe. <b style="color:var(--chalk)">Renaming</b> an exercise splits its history in two — old sessions stay under the old name, new ones use the new name — so for a real change, adding a new exercise is usually clearer than renaming. <b style="color:var(--chalk)">Deleting</b> never removes logged history, just hides it from the current list (it still appears in Progress, marked "no longer in catalog").
+    <div class="mono" style="font-size:11px;color:var(--chalk-faint);margin-bottom:10px;line-height:1.5">
+      Changes here affect this workout for everyone using the app. Adding or editing sets/reps/RIR is always safe. <b style="color:var(--chalk)">Renaming</b> an exercise splits its history in two — old sessions keep the old name, new ones use the new name — so for a real change, adding a new exercise is usually clearer than renaming. <b style="color:var(--chalk)">Hiding</b> never removes logged history and can be undone any time — it still appears in Progress, marked "no longer in catalog".
     </div>`;
+
+  // Add-new comes first — it's the thing people come here to do most, and
+  // it was easy to miss buried below a long exercise list.
+  if (editingCatalogId === "new") {
+    html += catalogFormRow();
+  } else {
+    html += `<button class="pill" id="catAddNew" style="width:100%;padding:11px;margin-bottom:12px;border-color:var(--accent);color:var(--accent);font-weight:bold">+ Add new exercise to ${escapeHtml(w.title.replace("— ",""))}</button>`;
+  }
 
   w.exercises.forEach((ex, idx) => {
     if (editingCatalogId === ex.id) {
       html += catalogFormRow();
     } else {
-      const confirming = confirmDeleteId === ex.id;
       html += `<div class="exercise-card" style="padding:10px 14px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
           <div>
             <div class="exercise-name disp" style="font-size:14px">${escapeHtml(ex.name)}</div>
             <div class="exercise-target mono" style="font-size:11px">${ex.sets} × ${escapeHtml(ex.reps)}${ex.rir!=="—"?` · RIR ${escapeHtml(ex.rir)}`:""}${ex.weight?"":" · bodyweight"}</div>
           </div>
-          <div style="display:flex;gap:6px">
-            ${idx > 0 ? `<button class="pill" style="padding:4px 8px" data-move-up="${idx}">▲</button>` : ""}
-            ${idx < w.exercises.length - 1 ? `<button class="pill" style="padding:4px 8px" data-move-down="${idx}">▼</button>` : ""}
-            <button class="pill" style="padding:4px 8px" data-edit-catalog="${ex.id}">✎</button>
-            <button class="pill" style="padding:4px 8px;${confirming ? 'border-color:var(--accent);color:var(--accent)' : ''}" data-delete-catalog="${ex.id}">${confirming ? "Confirm?" : "🗑"}</button>
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            ${idx > 0 ? `<button class="pill" style="padding:6px 9px" data-move-up="${idx}" aria-label="Move up">▲</button>` : ""}
+            ${idx < w.exercises.length - 1 ? `<button class="pill" style="padding:6px 9px" data-move-down="${idx}" aria-label="Move down">▼</button>` : ""}
+            <button class="pill" style="padding:6px 9px" data-edit-catalog="${ex.id}" aria-label="Edit">✎</button>
+            <button class="pill" style="padding:6px 9px" data-hide-catalog="${ex.id}">Hide</button>
           </div>
         </div>
       </div>`;
     }
   });
 
-  if (editingCatalogId === "new") {
-    html += catalogFormRow();
-  } else {
-    html += `<button class="pill" id="catAddNew" style="width:100%;padding:10px">+ Add new exercise to ${w.title.replace("— ","")}</button>`;
+  if (w.hiddenExercises && w.hiddenExercises.length) {
+    html += `<button class="pill" id="toggleHiddenExercises" style="width:100%;padding:9px;margin-top:10px">
+      ${showHiddenExercises ? "▾" : "▸"} ${w.hiddenExercises.length} hidden exercise${w.hiddenExercises.length===1?"":"s"}
+    </button>`;
+    if (showHiddenExercises) {
+      w.hiddenExercises.forEach(ex => {
+        html += `<div class="exercise-card" style="padding:10px 14px;opacity:0.65">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <div>
+              <div class="exercise-name disp" style="font-size:14px">${escapeHtml(ex.name)}</div>
+              <div class="exercise-target mono" style="font-size:11px">${ex.sets} × ${escapeHtml(ex.reps)}</div>
+            </div>
+            <button class="pill" style="padding:6px 9px;flex-shrink:0" data-restore-catalog="${ex.id}">↩ Restore</button>
+          </div>
+        </div>`;
+      });
+    }
   }
+
   html += `</div>`;
   return html;
 }
@@ -942,9 +1015,14 @@ function wireManagePanel(w) {
       if (ex) openEditExercise(ex);
     };
   });
-  document.querySelectorAll("button[data-delete-catalog]").forEach(btn => {
-    btn.onclick = () => deleteCatalogExercise(+btn.dataset.deleteCatalog);
+  document.querySelectorAll("button[data-hide-catalog]").forEach(btn => {
+    btn.onclick = () => setExerciseHidden(+btn.dataset.hideCatalog, true);
   });
+  document.querySelectorAll("button[data-restore-catalog]").forEach(btn => {
+    btn.onclick = () => setExerciseHidden(+btn.dataset.restoreCatalog, false);
+  });
+  const hiddenToggle = document.getElementById("toggleHiddenExercises");
+  if (hiddenToggle) hiddenToggle.onclick = () => { showHiddenExercises = !showHiddenExercises; renderTrain(); };
   document.querySelectorAll("button[data-move-up]").forEach(btn => {
     btn.onclick = () => moveExercise(+btn.dataset.moveUp, -1, w);
   });
@@ -1000,7 +1078,7 @@ function renderTrain() {
           <label>CUE / NOTES FOR THIS DAY</label>
           <textarea id="metaCue" style="width:100%;min-height:70px;font-family:ui-monospace,monospace;background:var(--bg-soft);border:1px solid var(--border);border-radius:6px;color:var(--chalk);font-size:12.5px;padding:8px 10px;outline:none;box-sizing:border-box;resize:vertical;">${escapeHtml(workoutMetaForm.cue)}</textarea>
         </div>
-        ${metaError ? `<div class="mono" style="color:var(--accent);font-size:11.5px;margin:6px 0">⚠ ${escapeHtml(metaError)}</div>` : ""}
+        ${metaError ? `<div class="mono" style="color:var(--error);font-size:11.5px;margin:6px 0">⚠ ${escapeHtml(metaError)}</div>` : ""}
         <div style="display:flex;gap:8px;margin-top:10px 0 4px">
           <button class="pill" style="border-color:var(--green);color:var(--green)" id="metaSave">✓ Save</button>
           <button class="pill" id="metaCancel">✕ Cancel</button>
@@ -1027,7 +1105,11 @@ function renderTrain() {
   `;
 
   if (!w.exercises.length && !managingExercises) {
-    html += `<div class="empty-note">No exercises in this workout yet. Tap "⚙ Manage exercises" above to add some.</div>`;
+    const hasHidden = w.hiddenExercises && w.hiddenExercises.length;
+    html += `<div class="empty-note">${hasHidden
+      ? `All ${w.hiddenExercises.length} exercises here are currently hidden. Tap "⚙ Manage exercises" above to restore them.`
+      : `No exercises in this workout yet. Tap "⚙ Manage exercises" above to add some.`
+    }</div>`;
   }
 
   w.exercises.forEach((ex, ei) => {
@@ -1051,6 +1133,7 @@ function renderTrain() {
                  <button class="video-link mono" style="padding:2px 6px" data-override-ex="${ei}">✎</button>`}
             ${ex.rir !== "—" ? `<span>·  RIR ${escapeHtml(ex.rir)}</span>` : ""}${ex.weightLabel ? `<span>·  ${escapeHtml(ex.weightLabel)} wt</span>` : ""}
           </div>
+          ${lastSessionLabels[ei] ? `<div class="mono" style="font-size:11px;color:var(--chalk-dim);margin-top:2px">Last time: ${escapeHtml(lastSessionLabels[ei])}</div>` : ""}
         </div>
         <a class="video-link mono" href="${ex.video}" target="_blank" rel="noopener noreferrer">▶ form</a>
       </div>
@@ -1218,7 +1301,11 @@ function bestSetLabel(entries) {
   entries.forEach(e => {
     if (e.weight != null && best && normalizedWeight(e) > normalizedWeight(best)) best = e;
   });
-  if (!best) best = entries[0];
+  if (!best) best = entries.find(e => e.actual_reps != null);
+  if (!best) {
+    const doneCount = entries.filter(e => e.done).length;
+    return doneCount ? `✓ ${doneCount} set${doneCount === 1 ? "" : "s"} done` : null;
+  }
   const side = best.weight_per_side ? "/side" : "";
   const w = best.weight != null ? `${best.weight}${unit}${side}` : "BW";
   const r = best.actual_reps != null ? ` × ${best.actual_reps}` : "";
@@ -1237,7 +1324,12 @@ function setRangeLabel(entries) {
   if (!weighted.length) {
     // bodyweight-only exercise — fall back to a reps range across sets
     const repsOnly = entries.filter(e => e.actual_reps != null).sort((a, b) => a.set_number - b.set_number);
-    if (!repsOnly.length) return null;
+    if (!repsOnly.length) {
+      // no numbers logged at all — but sets were still marked done, so
+      // this exercise shouldn't just vanish from Progress
+      const doneCount = entries.filter(e => e.done).length;
+      return doneCount ? `✓ ${doneCount} set${doneCount === 1 ? "" : "s"} done` : null;
+    }
     const first = repsOnly[0], last = repsOnly[repsOnly.length - 1];
     return repsOnly.length > 1 && first.actual_reps !== last.actual_reps
       ? `${first.actual_reps} → ${last.actual_reps} reps`
@@ -1394,7 +1486,7 @@ async function renderProgress() {
       html += `<div class="session-ex-row" style="color:var(--gold)"><span>🏃 Cardio</span><span>${c.minutes != null ? c.minutes + " min" : ""}${c.done ? " ✓" : ""}</span></div>`;
     }
     w.exercises.forEach(ex => {
-      const entries = rows.filter(r => r.exercise === ex.name && (r.weight != null || r.actual_reps != null));
+      const entries = rows.filter(r => r.exercise === ex.name && (r.weight != null || r.actual_reps != null || r.done));
       const label = setRangeLabel(entries);
       if (!label) return;
       html += `<div class="session-ex-row"><span>${escapeHtml(ex.name)}</span><span>${escapeHtml(label)}</span></div>`;
@@ -1405,7 +1497,7 @@ async function renderProgress() {
     const catalogNames = new Set(w.exercises.map(e => e.name));
     const loggedNames = [...new Set(rows.map(r => r.exercise))];
     loggedNames.filter(n => !catalogNames.has(n)).forEach(name => {
-      const entries = rows.filter(r => r.exercise === name && (r.weight != null || r.actual_reps != null));
+      const entries = rows.filter(r => r.exercise === name && (r.weight != null || r.actual_reps != null || r.done));
       const label = setRangeLabel(entries);
       if (!label) return;
       html += `<div class="session-ex-row" style="color:var(--chalk-faint)"><span>${escapeHtml(name)} <span class="mono" style="font-size:10px">(no longer in catalog)</span></span><span>${escapeHtml(label)}</span></div>`;
@@ -1482,7 +1574,7 @@ async function renderWeekView() {
           html += `<div id="${detailId}" style="display:${isOpen ? 'block' : 'none'};padding:2px 0 6px 15px">`;
           if (w) {
             w.exercises.forEach(ex => {
-              const entries = rows.filter(r => r.exercise === ex.name && (r.weight != null || r.actual_reps != null));
+              const entries = rows.filter(r => r.exercise === ex.name && (r.weight != null || r.actual_reps != null || r.done));
               const rangeLabel = setRangeLabel(entries);
               if (!rangeLabel) return;
               html += `<div class="session-ex-row" style="font-size:12px"><span>${escapeHtml(ex.name)}</span><span>${escapeHtml(rangeLabel)}</span></div>`;
@@ -1492,7 +1584,7 @@ async function renderWeekView() {
             const catalogNames = new Set(w.exercises.map(e => e.name));
             const loggedNames = [...new Set(rows.map(r => r.exercise))];
             loggedNames.filter(n => !catalogNames.has(n)).forEach(name => {
-              const entries = rows.filter(r => r.exercise === name && (r.weight != null || r.actual_reps != null));
+              const entries = rows.filter(r => r.exercise === name && (r.weight != null || r.actual_reps != null || r.done));
               const rangeLabel = setRangeLabel(entries);
               if (!rangeLabel) return;
               html += `<div class="session-ex-row" style="font-size:12px;color:var(--chalk-faint)"><span>${escapeHtml(name)} <span class="mono" style="font-size:10px">(no longer in catalog)</span></span><span>${escapeHtml(rangeLabel)}</span></div>`;
@@ -1661,7 +1753,7 @@ async function renderTrendView() {
   html += `<div style="margin-top:14px">`;
   [...dates].reverse().forEach(dateStr => {
     const entries = byDate[dateStr];
-    const label = bestSetLabel(entries.filter(r => r.weight != null || r.actual_reps != null));
+    const label = bestSetLabel(entries.filter(r => r.weight != null || r.actual_reps != null || r.done));
     if (!label) return;
     const dObj = new Date(dateStr + "T00:00:00");
     html += `<div class="session-ex-row"><span>${dObj.toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span><span>${label}</span></div>`;
@@ -1688,7 +1780,7 @@ const GUIDE_SECTIONS = [
     <p><b>Rest:</b> 2–3 min compound lifts, 60–90 sec accessories, 90–180 sec pull-up skill work.</p>
     <p><b>Tempo:</b> control the eccentric for about 2–3 seconds unless noted.</p>
     <p><b>Overload:</b> improve quality and reps first — only add load once the top of the rep range is clean at the prescribed RIR.</p>
-    <p style="color:var(--accent)">Sharp or increasing pain — especially right shoulder, wrist, or lower back — is never something to push through.</p>` },
+    <p style="color:var(--error)">Sharp or increasing pain — especially right shoulder, wrist, or lower back — is never something to push through.</p>` },
   { title: "Pull-Up Progression", html: `
     <p><b>Weeks 1–2:</b> active hangs + scapular pull-ups + assisted pull-ups.</p>
     <p><b>Weeks 3–4:</b> gradually decrease assistance while reps stay clean. Add 3×3 slow negatives once a week if the shoulder tolerates it (~3–5 sec down).</p>
@@ -1895,6 +1987,27 @@ function showBackupTextFallback(json) {
 }
 
 document.getElementById("backupBtn").onclick = exportBackup;
+
+// If the app is left open across midnight (very normal for a PWA someone
+// doesn't fully close), "today" never re-checks itself on its own — this
+// catches that the moment the tab/app becomes visible again and fixes it,
+// but only when the person hadn't deliberately navigated to a different
+// date (so reviewing a past day is never silently overwritten).
+function checkDateRollover() {
+  const realToday = localDateStr(new Date());
+  if (realToday === lastKnownRealDate) return; // no rollover since last check
+  const wasShowingOldToday = currentDate === lastKnownRealDate;
+  lastKnownRealDate = realToday;
+  if (wasShowingOldToday) {
+    currentDate = realToday;
+    document.getElementById("todayLabel").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+    const dateInput = document.getElementById("dateInput");
+    if (dateInput) dateInput.value = currentDate;
+    loadSession(currentDate, currentWorkoutId).then(renderTrain);
+  }
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkDateRollover(); });
+window.addEventListener("focus", checkDateRollover);
 
 document.getElementById("todayLabel").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 document.getElementById("trainTab").innerHTML = `<div class="loading-note">Loading program…</div>`;
